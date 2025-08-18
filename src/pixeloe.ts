@@ -2,6 +2,10 @@ import { PixelImageData } from './core/imageData';
 import { outlineExpansion } from './core/outline';
 import { matchColor, colorStyling } from './core/color';
 import { contrastDownscale, nearestUpscale, centerDownscale, kCentroidDownscale } from './core/downscale';
+import { quantizeAndDither } from './core/quantization';
+import { applySharpen, type SharpenMode } from './core/sharpen';
+import { highQualityResize } from './core/resample';
+import { type DitherMethod } from './core/dithering';
 
 /**
  * PixelOE configuration options
@@ -9,13 +13,23 @@ import { contrastDownscale, nearestUpscale, centerDownscale, kCentroidDownscale 
 export interface PixelOEOptions {
   pixelSize: number;
   thickness: number;
-  mode: 'contrast' | 'center' | 'nearest' | 'bilinear' | 'k-centroid';
+  mode: 'contrast' | 'center' | 'nearest' | 'bilinear' | 'k-centroid' | 'lanczos';
   colorMatching: boolean;
   contrast: number;
   saturation: number;
   noUpscale: boolean;
   noDownscale: boolean;
   kCentroids?: number; // Number of centroids for k-centroid mode
+  
+  // New options from Python version
+  sharpenMode?: SharpenMode; // Sharpening algorithm
+  sharpenStrength?: number; // Sharpening strength
+  doQuantization?: boolean; // Enable color quantization
+  numColors?: number; // Number of colors for quantization
+  ditherMethod?: DitherMethod; // Dithering method
+  quantMode?: 'kmeans'; // Quantization algorithm (for future extensibility)
+  noPostUpscale?: boolean; // Skip final upscaling
+  resampleMethod?: 'lanczos' | 'bicubic' | 'auto'; // High-quality resampling method
 }
 
 /**
@@ -44,6 +58,17 @@ export class PixelOE {
       noUpscale: false,
       noDownscale: false,
       kCentroids: 2,
+      
+      // New default options
+      sharpenMode: 'none',
+      sharpenStrength: 1.0,
+      doQuantization: false,
+      numColors: 32,
+      ditherMethod: 'none',
+      quantMode: 'kmeans',
+      noPostUpscale: false,
+      resampleMethod: 'auto',
+      
       ...options
     };
   }
@@ -179,11 +204,12 @@ export class PixelOE {
     let result = processedImageData.clone();
     let expansionWeights: Float32Array | undefined;
 
-    // Calculate target size
-    const totalPixels = processedImageData.width * processedImageData.height;
-    const targetSize = Math.floor(Math.sqrt(totalPixels) / this.options.pixelSize);
+    // Step 1: Optional sharpening (before other processing)
+    if (this.options.sharpenMode && this.options.sharpenMode !== 'none') {
+      result = applySharpen(result, this.options.sharpenMode, this.options.sharpenStrength || 1.0);
+    }
 
-    // Step 1: Outline expansion
+    // Step 2: Outline expansion
     if (this.options.thickness > 0) {
       const expansion = outlineExpansion(
         result,
@@ -197,13 +223,17 @@ export class PixelOE {
       expansionWeights = expansion.weights;
     }
 
-    // Step 2: Color matching
+    // Step 3: Color matching
     if (this.options.colorMatching) {
       result = matchColor(result, originalImageData);
     }
 
-    // Step 3: Downscaling
+    // Step 4: Downscaling
     if (!this.options.noDownscale) {
+      // Calculate target size
+      const totalPixels = processedImageData.width * processedImageData.height;
+      const targetSize = Math.floor(Math.sqrt(totalPixels) / this.options.pixelSize);
+      
       switch (this.options.mode) {
         case 'contrast':
           result = contrastDownscale(result, targetSize);
@@ -224,6 +254,12 @@ export class PixelOE {
           const targetWidthB = Math.floor(targetHeightB * ratioB);
           result = this.resizeBilinear(result, targetWidthB, targetHeightB);
           break;
+        case 'lanczos':
+          const ratioL = imageData.width / imageData.height;
+          const targetHeightL = Math.floor(Math.sqrt(targetSize * targetSize / ratioL));
+          const targetWidthL = Math.floor(targetHeightL * ratioL);
+          result = highQualityResize(result, targetWidthL, targetHeightL, this.options.resampleMethod);
+          break;
         case 'k-centroid':
           result = kCentroidDownscale(result, targetSize, this.options.kCentroids || 2);
           break;
@@ -232,13 +268,23 @@ export class PixelOE {
       }
     }
 
-    // Step 4: Color styling
+    // Step 5: Color quantization and dithering
+    if (this.options.doQuantization) {
+      result = quantizeAndDither(
+        result,
+        this.options.numColors || 32,
+        this.options.ditherMethod || 'none'
+      );
+    }
+
+    // Step 6: Color styling
     if (this.options.contrast !== 1.0 || this.options.saturation !== 1.0) {
       result = colorStyling(result, this.options.saturation, this.options.contrast);
     }
 
-    // Step 5: Upscaling
-    if (!this.options.noUpscale) {
+    // Step 7: Upscaling (unless disabled)
+    const shouldUpscale = !this.options.noUpscale && !this.options.noPostUpscale;
+    if (shouldUpscale) {
       result = nearestUpscale(result, this.options.pixelSize);
     }
 
