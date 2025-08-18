@@ -52,7 +52,20 @@
             <option value="center">中心像素</option>
             <option value="nearest">最近邻</option>
             <option value="bilinear">双线性</option>
+            <option value="k-centroid">K重心聚类</option>
           </select>
+        </div>
+
+        <div class="control-item" v-if="options.mode === 'k-centroid'">
+          <label>聚类数量: {{ options.kCentroids }}</label>
+          <input
+            type="range"
+            v-model.number="options.kCentroids"
+            min="2"
+            max="8"
+            step="1"
+            @input="handleOptionsChange"
+          />
         </div>
 
         <div class="control-item">
@@ -173,7 +186,8 @@ const options = reactive<PixelOEOptions>({
   contrast: 1.0,
   saturation: 1.0,
   noUpscale: false,
-  noDownscale: false
+  noDownscale: false,
+  kCentroids: 2
 })
 
 // Create PixelOE instance

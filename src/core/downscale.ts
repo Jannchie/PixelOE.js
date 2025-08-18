@@ -219,3 +219,193 @@ export function centerDownscale(imageData: PixelImageData, targetSize: number): 
   
   return result;
 }
+
+/**
+ * K-means clustering for a set of pixels
+ */
+function kMeansCluster(pixels: Array<[number, number, number]>, k: number = 2, maxIterations: number = 10): Array<[number, number, number]> {
+  if (pixels.length === 0) return [];
+  if (k <= 0 || k >= pixels.length) {
+    // If k is invalid, return the most frequent color or average
+    if (pixels.length === 1) return [pixels[0]];
+    const avgR = pixels.reduce((sum, p) => sum + p[0], 0) / pixels.length;
+    const avgG = pixels.reduce((sum, p) => sum + p[1], 0) / pixels.length;
+    const avgB = pixels.reduce((sum, p) => sum + p[2], 0) / pixels.length;
+    return [[Math.round(avgR), Math.round(avgG), Math.round(avgB)]];
+  }
+
+  // Initialize centroids deterministically using min-max interpolation
+  let minR = pixels[0][0], maxR = pixels[0][0];
+  let minG = pixels[0][1], maxG = pixels[0][1];
+  let minB = pixels[0][2], maxB = pixels[0][2];
+  
+  for (const pixel of pixels) {
+    if (pixel[0] < minR) minR = pixel[0];
+    if (pixel[0] > maxR) maxR = pixel[0];
+    if (pixel[1] < minG) minG = pixel[1];
+    if (pixel[1] > maxG) maxG = pixel[1];
+    if (pixel[2] < minB) minB = pixel[2];
+    if (pixel[2] > maxB) maxB = pixel[2];
+  }
+
+  const centroids: Array<[number, number, number]> = [];
+  for (let i = 0; i < k; i++) {
+    const t = i / (k - 1);
+    centroids.push([
+      minR + t * (maxR - minR),
+      minG + t * (maxG - minG),
+      minB + t * (maxB - minB)
+    ]);
+  }
+
+  // K-means iterations
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // Assign pixels to closest centroids
+    const clusters: Array<Array<[number, number, number]>> = Array(k).fill(null).map(() => []);
+    
+    for (const pixel of pixels) {
+      let bestCentroid = 0;
+      let bestDistance = Infinity;
+      
+      for (let c = 0; c < k; c++) {
+        const distance = 
+          Math.pow(pixel[0] - centroids[c][0], 2) +
+          Math.pow(pixel[1] - centroids[c][1], 2) +
+          Math.pow(pixel[2] - centroids[c][2], 2);
+        
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestCentroid = c;
+        }
+      }
+      
+      clusters[bestCentroid].push(pixel);
+    }
+
+    // Update centroids
+    let converged = true;
+    for (let c = 0; c < k; c++) {
+      if (clusters[c].length === 0) continue;
+      
+      const newCentroid: [number, number, number] = [
+        clusters[c].reduce((sum, p) => sum + p[0], 0) / clusters[c].length,
+        clusters[c].reduce((sum, p) => sum + p[1], 0) / clusters[c].length,
+        clusters[c].reduce((sum, p) => sum + p[2], 0) / clusters[c].length
+      ];
+      
+      const distance = 
+        Math.pow(newCentroid[0] - centroids[c][0], 2) +
+        Math.pow(newCentroid[1] - centroids[c][1], 2) +
+        Math.pow(newCentroid[2] - centroids[c][2], 2);
+      
+      if (distance > 1) { // 1 pixel difference threshold
+        converged = false;
+      }
+      
+      centroids[c] = [
+        Math.round(newCentroid[0]),
+        Math.round(newCentroid[1]),
+        Math.round(newCentroid[2])
+      ];
+    }
+
+    if (converged) break;
+  }
+
+  // Remove empty centroids
+  return centroids.filter((_, i) => 
+    pixels.some(pixel => {
+      let bestCentroid = 0;
+      let bestDistance = Infinity;
+      
+      for (let c = 0; c < centroids.length; c++) {
+        const distance = 
+          Math.pow(pixel[0] - centroids[c][0], 2) +
+          Math.pow(pixel[1] - centroids[c][1], 2) +
+          Math.pow(pixel[2] - centroids[c][2], 2);
+        
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestCentroid = c;
+        }
+      }
+      
+      return bestCentroid === i;
+    })
+  );
+}
+
+/**
+ * K-centroid downscaling algorithm
+ */
+export function kCentroidDownscale(imageData: PixelImageData, targetSize: number, k: number = 2): PixelImageData {
+  const ratio = imageData.width / imageData.height;
+  const targetHeight = Math.floor(Math.sqrt(targetSize * targetSize / ratio));
+  const targetWidth = Math.floor(targetHeight * ratio);
+  
+  const patchSizeY = Math.max(1, Math.floor(imageData.height / targetHeight));
+  const patchSizeX = Math.max(1, Math.floor(imageData.width / targetWidth));
+  
+  const result = new PixelImageData(targetWidth, targetHeight);
+  
+  for (let ty = 0; ty < targetHeight; ty++) {
+    for (let tx = 0; tx < targetWidth; tx++) {
+      const startX = tx * patchSizeX;
+      const startY = ty * patchSizeY;
+      const endX = Math.min(startX + patchSizeX, imageData.width);
+      const endY = Math.min(startY + patchSizeY, imageData.height);
+      
+      // Extract patch pixels
+      const patchPixels: Array<[number, number, number]> = [];
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const [r, g, b] = imageData.getPixel(x, y);
+          patchPixels.push([r, g, b]);
+        }
+      }
+      
+      if (patchPixels.length === 0) {
+        result.setPixel(tx, ty, [0, 0, 0, 255]);
+        continue;
+      }
+      
+      // Apply K-means clustering
+      const centroids = kMeansCluster(patchPixels, Math.min(k, patchPixels.length));
+      
+      if (centroids.length === 0) {
+        // Fallback to average color
+        const avgR = patchPixels.reduce((sum, p) => sum + p[0], 0) / patchPixels.length;
+        const avgG = patchPixels.reduce((sum, p) => sum + p[1], 0) / patchPixels.length;
+        const avgB = patchPixels.reduce((sum, p) => sum + p[2], 0) / patchPixels.length;
+        result.setPixel(tx, ty, [Math.round(avgR), Math.round(avgG), Math.round(avgB), 255]);
+      } else {
+        // Find the centroid closest to the center pixel
+        const centerX = Math.floor((startX + endX - 1) / 2);
+        const centerY = Math.floor((startY + endY - 1) / 2);
+        const [centerR, centerG, centerB] = imageData.getPixel(
+          clamp(centerX, 0, imageData.width - 1),
+          clamp(centerY, 0, imageData.height - 1)
+        );
+        
+        let bestCentroid = centroids[0];
+        let bestDistance = Infinity;
+        
+        for (const centroid of centroids) {
+          const distance = 
+            Math.pow(centerR - centroid[0], 2) +
+            Math.pow(centerG - centroid[1], 2) +
+            Math.pow(centerB - centroid[2], 2);
+          
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestCentroid = centroid;
+          }
+        }
+        
+        result.setPixel(tx, ty, [bestCentroid[0], bestCentroid[1], bestCentroid[2], 255]);
+      }
+    }
+  }
+  
+  return result;
+}

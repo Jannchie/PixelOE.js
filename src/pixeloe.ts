@@ -1,7 +1,7 @@
 import { PixelImageData } from './core/imageData';
 import { outlineExpansion } from './core/outline';
 import { matchColor, colorStyling } from './core/color';
-import { contrastDownscale, nearestUpscale, centerDownscale, bilinearUpscale } from './core/downscale';
+import { contrastDownscale, nearestUpscale, centerDownscale, bilinearUpscale, kCentroidDownscale } from './core/downscale';
 
 /**
  * PixelOE configuration options
@@ -9,12 +9,13 @@ import { contrastDownscale, nearestUpscale, centerDownscale, bilinearUpscale } f
 export interface PixelOEOptions {
   pixelSize: number;
   thickness: number;
-  mode: 'contrast' | 'center' | 'nearest' | 'bilinear';
+  mode: 'contrast' | 'center' | 'nearest' | 'bilinear' | 'k-centroid';
   colorMatching: boolean;
   contrast: number;
   saturation: number;
   noUpscale: boolean;
   noDownscale: boolean;
+  kCentroids?: number; // Number of centroids for k-centroid mode
 }
 
 /**
@@ -42,6 +43,7 @@ export class PixelOE {
       saturation: 1.0,
       noUpscale: false,
       noDownscale: false,
+      kCentroids: 2,
       ...options
     };
   }
@@ -221,6 +223,9 @@ export class PixelOE {
           const targetHeightB = Math.floor(Math.sqrt(targetSize * targetSize / ratioB));
           const targetWidthB = Math.floor(targetHeightB * ratioB);
           result = this.resizeBilinear(result, targetWidthB, targetHeightB);
+          break;
+        case 'k-centroid':
+          result = kCentroidDownscale(result, targetSize, this.options.kCentroids || 2);
           break;
         default:
           result = contrastDownscale(result, targetSize);
