@@ -52,7 +52,7 @@ function getColorPatch(imageData: PixelImageData, startX: number, startY: number
   for (let y = startY; y < startY + patchSize && y < imageData.height; y++) {
     for (let x = startX; x < startX + patchSize && x < imageData.width; x++) {
       const [r, g, b] = imageData.getPixel(x, y);
-      const [l, a, bLab] = rgbToLab(r, g, b);
+      const [, a, bLab] = rgbToLab(r, g, b);
       
       luminancePatch.push([r, g, b]);
       aPatch.push(a);

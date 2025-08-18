@@ -5,7 +5,29 @@ import { PixelImageData } from './imageData';
  */
 
 /**
- * Create a circular kernel for morphological operations
+ * Create expansion kernel (3x3 all ones - matching Python kernel_expansion)
+ */
+export function createExpansionKernel(): number[][] {
+  return [
+    [1, 1, 1],
+    [1, 1, 1],
+    [1, 1, 1]
+  ];
+}
+
+/**
+ * Create smoothing kernel (cross shape - matching Python kernel_smoothing)
+ */
+export function createSmoothingKernel(): number[][] {
+  return [
+    [0, 1, 0],
+    [1, 1, 1],
+    [0, 1, 0]
+  ];
+}
+
+/**
+ * Create a circular kernel for morphological operations (kept for backward compatibility)
  */
 export function createCircularKernel(radius: number): number[][] {
   const size = Math.floor(radius) * 2 + 1;
@@ -34,102 +56,94 @@ export function createCircularKernel(radius: number): number[][] {
 }
 
 /**
- * Dilate operation - expands bright regions
+ * Generic morphological operation with specified kernel
  */
-export function dilate(imageData: PixelImageData, kernelSize: number = 3): PixelImageData {
-  const result = new PixelImageData(imageData.width, imageData.height);
-  const kernel = createCircularKernel(kernelSize / 2);
-  const kernelHalf = Math.floor(kernel.length / 2);
+function applyMorphologicalOperation(
+  imageData: PixelImageData, 
+  kernel: number[][], 
+  operation: 'dilate' | 'erode',
+  iterations: number = 1
+): PixelImageData {
+  let result = imageData;
+  
+  for (let iter = 0; iter < iterations; iter++) {
+    const temp = new PixelImageData(result.width, result.height);
+    const kernelHalf = Math.floor(kernel.length / 2);
 
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      let maxR = 0, maxG = 0, maxB = 0;
-      let maxA = 0;
+    for (let y = 0; y < result.height; y++) {
+      for (let x = 0; x < result.width; x++) {
+        let extremeR = operation === 'dilate' ? 0 : 255;
+        let extremeG = operation === 'dilate' ? 0 : 255;
+        let extremeB = operation === 'dilate' ? 0 : 255;
+        let extremeA = operation === 'dilate' ? 0 : 255;
 
-      // Apply kernel
-      for (let ky = 0; ky < kernel.length; ky++) {
-        for (let kx = 0; kx < kernel[ky].length; kx++) {
-          const weight = kernel[ky][kx];
-          if (weight <= 0) continue;
+        // Apply kernel
+        for (let ky = 0; ky < kernel.length; ky++) {
+          for (let kx = 0; kx < kernel[ky].length; kx++) {
+            const weight = kernel[ky][kx];
+            if (weight <= 0) continue;
 
-          const px = Math.min(Math.max(x + kx - kernelHalf, 0), imageData.width - 1);
-          const py = Math.min(Math.max(y + ky - kernelHalf, 0), imageData.height - 1);
-          
-          const [r, g, b, a] = imageData.getPixel(px, py);
-          
-          // Apply kernel weight and find maximum
-          const weightedR = r * weight;
-          const weightedG = g * weight;
-          const weightedB = b * weight;
-          const weightedA = a * weight;
+            const px = Math.min(Math.max(x + kx - kernelHalf, 0), result.width - 1);
+            const py = Math.min(Math.max(y + ky - kernelHalf, 0), result.height - 1);
+            
+            const [r, g, b, a] = result.getPixel(px, py);
 
-          if (weightedR > maxR) maxR = weightedR;
-          if (weightedG > maxG) maxG = weightedG;
-          if (weightedB > maxB) maxB = weightedB;
-          if (weightedA > maxA) maxA = weightedA;
+            if (operation === 'dilate') {
+              if (r > extremeR) extremeR = r;
+              if (g > extremeG) extremeG = g;
+              if (b > extremeB) extremeB = b;
+              if (a > extremeA) extremeA = a;
+            } else {
+              if (r < extremeR) extremeR = r;
+              if (g < extremeG) extremeG = g;
+              if (b < extremeB) extremeB = b;
+              if (a < extremeA) extremeA = a;
+            }
+          }
         }
-      }
 
-      result.setPixel(x, y, [
-        Math.min(255, Math.round(maxR)),
-        Math.min(255, Math.round(maxG)),
-        Math.min(255, Math.round(maxB)),
-        Math.min(255, Math.round(maxA))
-      ]);
+        temp.setPixel(x, y, [extremeR, extremeG, extremeB, extremeA]);
+      }
     }
+    
+    result = temp;
   }
 
   return result;
 }
 
 /**
- * Erode operation - shrinks bright regions
+ * Dilate operation with expansion kernel (matching Python)
  */
-export function erode(imageData: PixelImageData, kernelSize: number = 3): PixelImageData {
-  const result = new PixelImageData(imageData.width, imageData.height);
-  const kernel = createCircularKernel(kernelSize / 2);
-  const kernelHalf = Math.floor(kernel.length / 2);
-
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      let minR = 255, minG = 255, minB = 255;
-      let minA = 255;
-
-      // Apply kernel
-      for (let ky = 0; ky < kernel.length; ky++) {
-        for (let kx = 0; kx < kernel[ky].length; kx++) {
-          const weight = kernel[ky][kx];
-          if (weight <= 0) continue;
-
-          const px = Math.min(Math.max(x + kx - kernelHalf, 0), imageData.width - 1);
-          const py = Math.min(Math.max(y + ky - kernelHalf, 0), imageData.height - 1);
-          
-          const [r, g, b, a] = imageData.getPixel(px, py);
-          
-          // Apply inverse kernel weight and find minimum
-          const weightedR = r - (255 - r) * (weight - 1);
-          const weightedG = g - (255 - g) * (weight - 1);
-          const weightedB = b - (255 - b) * (weight - 1);
-          const weightedA = a - (255 - a) * (weight - 1);
-
-          if (weightedR < minR) minR = weightedR;
-          if (weightedG < minG) minG = weightedG;
-          if (weightedB < minB) minB = weightedB;
-          if (weightedA < minA) minA = weightedA;
-        }
-      }
-
-      result.setPixel(x, y, [
-        Math.max(0, Math.round(minR)),
-        Math.max(0, Math.round(minG)),
-        Math.max(0, Math.round(minB)),
-        Math.max(0, Math.round(minA))
-      ]);
-    }
-  }
-
-  return result;
+export function dilate(imageData: PixelImageData, iterations: number = 1): PixelImageData {
+  const kernel = createExpansionKernel();
+  return applyMorphologicalOperation(imageData, kernel, 'dilate', iterations);
 }
+
+/**
+ * Erode operation with expansion kernel (matching Python) 
+ */
+export function erode(imageData: PixelImageData, iterations: number = 1): PixelImageData {
+  const kernel = createExpansionKernel();
+  return applyMorphologicalOperation(imageData, kernel, 'erode', iterations);
+}
+
+/**
+ * Dilate operation with smoothing kernel (matching Python smoothing operations)
+ */
+export function dilateSmooth(imageData: PixelImageData, iterations: number = 1): PixelImageData {
+  const kernel = createSmoothingKernel();
+  return applyMorphologicalOperation(imageData, kernel, 'dilate', iterations);
+}
+
+/**
+ * Erode operation with smoothing kernel (matching Python smoothing operations)
+ */
+export function erodeSmooth(imageData: PixelImageData, iterations: number = 1): PixelImageData {
+  const kernel = createSmoothingKernel();
+  return applyMorphologicalOperation(imageData, kernel, 'erode', iterations);
+}
+
 
 /**
  * Morphological opening (erode then dilate)

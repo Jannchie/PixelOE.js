@@ -1,7 +1,7 @@
 import { PixelImageData } from './core/imageData';
 import { outlineExpansion } from './core/outline';
 import { matchColor, colorStyling } from './core/color';
-import { contrastDownscale, nearestUpscale, centerDownscale, bilinearUpscale, kCentroidDownscale } from './core/downscale';
+import { contrastDownscale, nearestUpscale, centerDownscale, kCentroidDownscale } from './core/downscale';
 
 /**
  * PixelOE configuration options

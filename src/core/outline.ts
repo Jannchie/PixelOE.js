@@ -1,56 +1,72 @@
 import { PixelImageData } from './imageData';
 import { rgbToLab } from './colorSpace';
-import { dilate, erode, closing, opening } from './morphology';
-import { median, mean, sigmoid, clamp, normalize } from '../utils/math';
+import { dilate, erode, dilateSmooth, erodeSmooth } from './morphology';
+import { sigmoid } from '../utils/math';
 
 /**
  * Outline expansion algorithms
  */
 
-interface LocalStats {
-  median: number;
-  min: number;
-  max: number;
-  mean: number;
-  brightDist: number;
-  darkDist: number;
-}
 
 /**
- * Calculate local statistics for a patch
+ * Apply function to image patches (similar to Python apply_chunk_torch)
  */
-function getLocalStats(imageData: PixelImageData, centerX: number, centerY: number, patchSize: number): LocalStats {
-  const luminances: number[] = [];
+function applyChunkOperation(
+  imageData: PixelImageData,
+  patchSize: number,
+  stride: number,
+  operation: (values: number[]) => number
+): Float32Array {
+  const result = new Float32Array(imageData.width * imageData.height);
   const halfPatch = Math.floor(patchSize / 2);
-
-  for (let y = centerY - halfPatch; y <= centerY + halfPatch; y++) {
-    for (let x = centerX - halfPatch; x <= centerX + halfPatch; x++) {
-      const clampedX = clamp(x, 0, imageData.width - 1);
-      const clampedY = clamp(y, 0, imageData.height - 1);
+  
+  // Process in chunks with overlap
+  for (let y = 0; y < imageData.height; y += stride) {
+    for (let x = 0; x < imageData.width; x += stride) {
+      // Extract patch values
+      const patchValues: number[] = [];
       
-      const [r, g, b] = imageData.getPixel(clampedX, clampedY);
-      const [l] = rgbToLab(r, g, b);
-      luminances.push(l / 100); // Normalize to 0-1
+      for (let py = y - halfPatch; py <= y + halfPatch; py++) {
+        for (let px = x - halfPatch; px <= x + halfPatch; px++) {
+          const clampedX = Math.max(0, Math.min(px, imageData.width - 1));
+          const clampedY = Math.max(0, Math.min(py, imageData.height - 1));
+          
+          const [r, g, b] = imageData.getPixel(clampedX, clampedY);
+          // Convert to LAB L channel (normalized)
+          const [l] = rgbToLab(r, g, b);
+          patchValues.push(l / 100); // Normalize to 0-1
+        }
+      }
+      
+      // Apply operation to patch
+      const patchResult = operation(patchValues);
+      
+      // Fill result in stride x stride area
+      for (let dy = 0; dy < stride && y + dy < imageData.height; dy++) {
+        for (let dx = 0; dx < stride && x + dx < imageData.width; dx++) {
+          result[(y + dy) * imageData.width + (x + dx)] = patchResult;
+        }
+      }
     }
   }
-
-  const medianVal = median(luminances);
-  const meanVal = mean(luminances);
-  const minVal = Math.min(...luminances);
-  const maxVal = Math.max(...luminances);
-
-  return {
-    median: medianVal,
-    min: minVal,
-    max: maxVal,
-    mean: meanVal,
-    brightDist: maxVal - medianVal,
-    darkDist: medianVal - minVal
-  };
+  
+  return result;
 }
 
 /**
- * Calculate expansion weight map
+ * Calculate median of array
+ */
+function medianOfArray(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+}
+
+/**
+ * Calculate expansion weight map (matching Python implementation more closely)
  */
 export function calculateExpansionWeight(
   imageData: PixelImageData, 
@@ -59,73 +75,100 @@ export function calculateExpansionWeight(
   avgScale: number = 10,
   distScale: number = 3
 ): Float32Array {
+  // Calculate avg_y (median with larger patch - k * 2)
+  const avgY = applyChunkOperation(imageData, patchSize * 2, stride, medianOfArray);
+  
+  // Calculate max_y 
+  const maxY = applyChunkOperation(imageData, patchSize, stride, (values) => Math.max(...values));
+  
+  // Calculate min_y
+  const minY = applyChunkOperation(imageData, patchSize, stride, (values) => Math.min(...values));
+  
+  // Calculate weight following Python logic
   const weights = new Float32Array(imageData.width * imageData.height);
   
-  // For very large images, increase stride to reduce computation
-  const imageSize = imageData.width * imageData.height;
-  if (imageSize > 1000000) { // 1MP
-    stride = Math.max(stride, 8);
-    patchSize = Math.min(patchSize, 12);
+  for (let i = 0; i < weights.length; i++) {
+    const brightDist = maxY[i] - avgY[i];
+    const darkDist = avgY[i] - minY[i];
+    
+    const weight = (avgY[i] - 0.5) * avgScale - (brightDist - darkDist) * distScale;
+    weights[i] = sigmoid(weight);
   }
   
-  const tempWeights: number[] = [];
-  const samplePositions: Array<{x: number, y: number}> = [];
-
-  // Calculate weights at sample points
-  for (let y = stride; y < imageData.height - stride; y += stride) {
-    for (let x = stride; x < imageData.width - stride; x += stride) {
-      const stats = getLocalStats(imageData, x, y, patchSize);
-      
-      // Calculate weight based on original algorithm
-      const weight = (stats.median - 0.5) * avgScale - (stats.brightDist - stats.darkDist) * distScale;
-      const sigmoidWeight = sigmoid(weight);
-      
-      tempWeights.push(sigmoidWeight);
-      samplePositions.push({x, y});
-    }
-  }
-
-  // Normalize weights safely
-  const normalizedWeights = normalize(tempWeights);
-
-  // Interpolate weights across the entire image using nearest neighbor
-  const samplesPerRow = Math.floor((imageData.width - 2 * stride) / stride);
+  // Normalize weights (matching Python: (output - np.min(output)) / (np.max(output)))
+  let minWeight = weights[0];
+  let maxWeight = weights[0];
   
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      // Find nearest sample point
-      const sampleRow = Math.max(0, Math.min(Math.floor(y / stride), Math.floor((imageData.height - 2 * stride) / stride) - 1));
-      const sampleCol = Math.max(0, Math.min(Math.floor(x / stride), samplesPerRow - 1));
-      const sampleIndex = sampleRow * samplesPerRow + sampleCol;
-      
-      if (sampleIndex < normalizedWeights.length) {
-        weights[y * imageData.width + x] = normalizedWeights[sampleIndex];
-      } else {
-        weights[y * imageData.width + x] = 0.5; // Default weight
-      }
+  for (let i = 1; i < weights.length; i++) {
+    if (weights[i] < minWeight) minWeight = weights[i];
+    if (weights[i] > maxWeight) maxWeight = weights[i];
+  }
+  
+  const range = maxWeight - minWeight;
+  if (range > 0) {
+    for (let i = 0; i < weights.length; i++) {
+      weights[i] = (weights[i] - minWeight) / range;
     }
   }
 
   return weights;
 }
 
-/**
- * Apply weighted blend between two images
- */
-function weightedBlend(img1: PixelImageData, img2: PixelImageData, weights: Float32Array): PixelImageData {
-  const result = new PixelImageData(img1.width, img1.height);
 
-  for (let y = 0; y < img1.height; y++) {
-    for (let x = 0; x < img1.width; x++) {
-      const weight = weights[y * img1.width + x];
-      const [r1, g1, b1, a1] = img1.getPixel(x, y);
-      const [r2, g2, b2, a2] = img2.getPixel(x, y);
+/**
+ * Calculate orig_weight based on expansion weight (matching Python implementation)
+ */
+function calculateOrigWeight(weights: Float32Array): Float32Array {
+  const origWeights = new Float32Array(weights.length);
+  
+  for (let i = 0; i < weights.length; i++) {
+    // orig_weight = sigmoid((weight - 0.5) * 5) * 0.25
+    const sigmoidInput = (weights[i] - 0.5) * 5;
+    const sigmoidOutput = sigmoid(sigmoidInput);
+    origWeights[i] = sigmoidOutput * 0.25;
+  }
+  
+  return origWeights;
+}
+
+/**
+ * Apply three-way weighted blend (erode, dilate, original) - matching Python logic
+ */
+function threewayBlend(
+  eroded: PixelImageData, 
+  dilated: PixelImageData, 
+  original: PixelImageData,
+  weights: Float32Array,
+  origWeights: Float32Array
+): PixelImageData {
+  const result = new PixelImageData(original.width, original.height);
+
+  for (let y = 0; y < original.height; y++) {
+    for (let x = 0; x < original.width; x++) {
+      const weight = weights[y * original.width + x];
+      const origWeight = origWeights[y * original.width + x];
+      
+      const [re, ge, be, ae] = eroded.getPixel(x, y);
+      const [rd, gd, bd, ad] = dilated.getPixel(x, y);
+      const [ro, go, bo, ao] = original.getPixel(x, y);
+
+      // First blend: eroded * weight + dilated * (1 - weight)
+      const r1 = re * weight + rd * (1 - weight);
+      const g1 = ge * weight + gd * (1 - weight);
+      const b1 = be * weight + bd * (1 - weight);
+      const a1 = ae * weight + ad * (1 - weight);
+      
+      // Second blend: output = first_blend * (1 - orig_weight) + original * orig_weight
+      const r = r1 * (1 - origWeight) + ro * origWeight;
+      const g = g1 * (1 - origWeight) + go * origWeight;
+      const b = b1 * (1 - origWeight) + bo * origWeight;
+      const a = a1 * (1 - origWeight) + ao * origWeight;
 
       result.setPixel(x, y, [
-        Math.round(r1 * weight + r2 * (1 - weight)),
-        Math.round(g1 * weight + g2 * (1 - weight)),
-        Math.round(b1 * weight + b2 * (1 - weight)),
-        Math.round(a1 * weight + a2 * (1 - weight))
+        Math.round(Math.max(0, Math.min(255, r))),
+        Math.round(Math.max(0, Math.min(255, g))),
+        Math.round(Math.max(0, Math.min(255, b))),
+        Math.round(Math.max(0, Math.min(255, a)))
       ]);
     }
   }
@@ -147,18 +190,44 @@ export function outlineExpansion(
   // Calculate expansion weights
   const weights = calculateExpansionWeight(imageData, patchSize, patchSize / 4, avgScale, distScale);
   
+  // Calculate orig_weight (matching Python implementation)
+  const origWeights = calculateOrigWeight(weights);
+  
   // Apply morphological operations
   const eroded = erode(imageData, erodeIters);
   const dilated = dilate(imageData, dilateIters);
   
-  // Blend based on weights
-  let result = weightedBlend(eroded, dilated, weights);
+  // Apply three-way blend (eroded, dilated, original) - matching Python logic
+  let result = threewayBlend(eroded, dilated, imageData, weights, origWeights);
   
-  // Apply morphological cleanup operations
-  const cleanupIters = Math.max(erodeIters - 1, dilateIters - 1, 1);
-  result = erode(result, cleanupIters);
-  result = dilate(result, cleanupIters * 2);
-  result = erode(result, cleanupIters);
+  // Apply morphological cleanup operations (matching Python smoothing kernels)
+  result = erodeSmooth(result, erodeIters);
+  result = dilateSmooth(result, dilateIters * 2);
+  result = erodeSmooth(result, erodeIters);
 
-  return { result, weights };
+  // Post-process weights (matching Python: weight = np.abs(weight * 2 - 1))
+  const finalWeights = new Float32Array(weights.length);
+  for (let i = 0; i < weights.length; i++) {
+    finalWeights[i] = Math.abs(weights[i] * 2 - 1);
+  }
+  
+  // Apply dilate to weights (matching Python)
+  const weightImage = new PixelImageData(imageData.width, imageData.height);
+  for (let y = 0; y < imageData.height; y++) {
+    for (let x = 0; x < imageData.width; x++) {
+      const weight = finalWeights[y * imageData.width + x] * 255;
+      weightImage.setPixel(x, y, [weight, weight, weight, 255]);
+    }
+  }
+  const dilatedWeightImage = dilate(weightImage, dilateIters);
+  
+  // Convert back to weights array
+  for (let y = 0; y < imageData.height; y++) {
+    for (let x = 0; x < imageData.width; x++) {
+      const [w] = dilatedWeightImage.getPixel(x, y);
+      finalWeights[y * imageData.width + x] = w / 255;
+    }
+  }
+
+  return { result, weights: finalWeights };
 }
