@@ -478,15 +478,25 @@ function findNearestPaletteColorsWithDistanceInternal(
 }
 
 /**
- * Apply quantization and dithering combined
+ * Apply quantization and dithering combined (with weights support)
  */
 export function quantizeAndDither(
   imageData: PixelImageData,
   numCentroids: number = 32,
-  ditherMethod: 'none' | 'ordered' | 'error_diffusion' = 'none'
+  ditherMethod: 'none' | 'ordered' | 'error_diffusion' = 'none',
+  weights?: Float32Array
 ): PixelImageData {
-  // First perform K-means quantization
-  const { centroids } = colorQuantizationKMeans(imageData, { numCentroids });
+  // Prepare weights array if provided
+  let weightsArray: number[] | undefined;
+  if (weights) {
+    weightsArray = Array.from(weights);
+  }
+
+  // First perform K-means quantization (with weights if available)
+  const { centroids } = colorQuantizationKMeans(imageData, { 
+    numCentroids, 
+    weights: weightsArray
+  });
 
   // Apply dithering with the generated palette  
   if (ditherMethod === 'none') {
@@ -497,7 +507,12 @@ export function quantizeAndDither(
       for (let x = 0; x < imageData.width; x++) {
         const [r, g, b, a] = imageData.getPixel(x, y);
         const quantizedColor = findNearestPaletteColor([r, g, b], centroids);
-        result.setPixel(x, y, [quantizedColor[0], quantizedColor[1], quantizedColor[2], a]);
+        result.setPixel(x, y, [
+          Math.round(clamp(quantizedColor[0], 0, 255)),
+          Math.round(clamp(quantizedColor[1], 0, 255)),
+          Math.round(clamp(quantizedColor[2], 0, 255)),
+          a
+        ]);
       }
     }
     

@@ -3,38 +3,55 @@ import { rgbToLab, labToRgb } from './colorSpace';
 import { median, mean, clamp } from '../utils/math';
 
 /**
+ * Simple nearest neighbor resize
+ */
+function resizeNearest(imageData: PixelImageData, newWidth: number, newHeight: number): PixelImageData {
+  const result = new PixelImageData(newWidth, newHeight);
+  const scaleX = imageData.width / newWidth;
+  const scaleY = imageData.height / newHeight;
+
+  for (let y = 0; y < newHeight; y++) {
+    for (let x = 0; x < newWidth; x++) {
+      const srcX = Math.floor(x * scaleX);
+      const srcY = Math.floor(y * scaleY);
+      const pixel = imageData.getPixel(srcX, srcY);
+      result.setPixel(x, y, pixel);
+    }
+  }
+
+  return result;
+}
+
+/**
  * Downscaling algorithms
  */
 
 /**
- * Select pixel from a patch based on contrast analysis
+ * Select pixel luminance from a patch based on contrast analysis (matching Python exactly)
  */
-function selectPixelByContrast(patch: Array<[number, number, number]>): [number, number, number] {
-  if (patch.length === 0) return [0, 0, 0];
-  
-  // Convert to LAB and extract luminance
-  const labPatch = patch.map(([r, g, b]) => rgbToLab(r, g, b));
-  const luminances = labPatch.map(([l]) => l);
+function selectPixelLuminanceByContrast(luminances: number[]): number {
+  if (luminances.length === 0) return 0;
   
   const medianLum = median(luminances);
   const meanLum = mean(luminances);
   const maxLum = Math.max(...luminances);
   const minLum = Math.min(...luminances);
   
-  // Default to center pixel
-  const centerIdx = Math.floor(patch.length / 2);
-  let selectedIdx = centerIdx;
+  // Default to middle pixel (matching Python mid_idx)
+  const midIdx = Math.floor(luminances.length / 2);
+  let selectedValue = luminances[midIdx];
   
-  // Apply contrast-based selection logic
-  if (medianLum < meanLum && (maxLum - medianLum) > (medianLum - minLum)) {
-    // Patch is skewed toward low values, select minimum to preserve dark details
-    selectedIdx = luminances.indexOf(minLum);
-  } else if (medianLum > meanLum && (maxLum - medianLum) < (medianLum - minLum)) {
-    // Patch is skewed toward high values, select maximum to preserve bright details
-    selectedIdx = luminances.indexOf(maxLum);
+  // Apply contrast-based selection logic (matching Python cond1 and cond2)
+  const cond1 = medianLum < meanLum && (maxLum - medianLum) > (medianLum - minLum);
+  const cond2 = medianLum > meanLum && (maxLum - medianLum) < (medianLum - minLum);
+  
+  if (cond1) {
+    selectedValue = minLum;
+  } else if (cond2) {
+    selectedValue = maxLum;
   }
   
-  return patch[selectedIdx];
+  return selectedValue;
 }
 
 /**
@@ -64,44 +81,73 @@ function getColorPatch(imageData: PixelImageData, startX: number, startY: number
 }
 
 /**
- * Contrast-based downscaling algorithm
+ * Contrast-based downscaling algorithm (updated to match Python implementation exactly)
  */
-export function contrastDownscale(imageData: PixelImageData, targetSize: number): PixelImageData {
-  const ratio = imageData.width / imageData.height;
-  const targetHeight = Math.floor(Math.sqrt(targetSize * targetSize / ratio));
-  const targetWidth = Math.floor(targetHeight * ratio);
+export function contrastDownscale(imageData: PixelImageData, targetSize: number = 128): PixelImageData {
+  // Step 1: Calculate target_hw (matching Python line 34-35)
+  const { width: w, height: h } = imageData;
+  const ratio = w / h;
+  const adjustedTargetSize = Math.sqrt((targetSize * targetSize) / ratio);
+  const targetHW: [number, number] = [
+    Math.floor(adjustedTargetSize * ratio), // width
+    Math.floor(adjustedTargetSize)         // height
+  ];
   
-  const patchSizeY = Math.max(1, Math.floor(imageData.height / targetHeight));
-  const patchSizeX = Math.max(1, Math.floor(imageData.width / targetWidth));
+  // Step 2: Calculate patch_size (matching Python line 36)
+  const patchSize = Math.max(
+    Math.round(h / targetHW[1]),
+    Math.round(w / targetHW[0])
+  );
   
-  const result = new PixelImageData(targetWidth, targetHeight);
+  console.log(`Contrast downscale: targetSize=${targetSize}, targetHW=[${targetHW[0]}, ${targetHW[1]}], patchSize=${patchSize}`);
   
-  for (let ty = 0; ty < targetHeight; ty++) {
-    for (let tx = 0; tx < targetWidth; tx++) {
-      const startX = tx * patchSizeX;
-      const startY = ty * patchSizeY;
+  // Step 3: Apply contrast-based processing with patches (matching Python apply_chunk_torch)
+  const processedImage = imageData.clone();
+  
+  for (let y = 0; y < h; y += patchSize) {
+    for (let x = 0; x < w; x += patchSize) {
+      const lPatch: number[] = [];
+      const aPatch: number[] = [];
+      const bPatch: number[] = [];
       
-      // Get patch data
-      const { luminancePatch, aPatch, bPatch } = getColorPatch(
-        imageData, startX, startY, Math.max(patchSizeX, patchSizeY)
-      );
+      // Extract patch values
+      for (let py = y; py < Math.min(y + patchSize, h); py++) {
+        for (let px = x; px < Math.min(x + patchSize, w); px++) {
+          const [r, g, b] = imageData.getPixel(px, py);
+          const [l, a, bLab] = rgbToLab(r, g, b);
+          
+          lPatch.push(l);
+          aPatch.push(a);
+          bPatch.push(bLab);
+        }
+      }
       
-      // Select luminance pixel using contrast analysis
-      const [selectedR, selectedG, selectedB] = selectPixelByContrast(luminancePatch);
-      const [selectedL] = rgbToLab(selectedR, selectedG, selectedB);
+      // Process L channel with contrast analysis
+      const selectedL = selectPixelLuminanceByContrast(lPatch);
       
-      // Use median for A and B channels
+      // Process A and B channels with median
       const medianA = median(aPatch);
       const medianB = median(bPatch);
       
       // Convert back to RGB
       const [finalR, finalG, finalB] = labToRgb(selectedL, medianA, medianB);
       
-      result.setPixel(tx, ty, [finalR, finalG, finalB, 255]);
+      // Fill the entire patch with the selected values (matching Python behavior)
+      for (let py = y; py < Math.min(y + patchSize, h); py++) {
+        for (let px = x; px < Math.min(x + patchSize, w); px++) {
+          processedImage.setPixel(px, py, [
+            Math.round(clamp(finalR, 0, 255)),
+            Math.round(clamp(finalG, 0, 255)),
+            Math.round(clamp(finalB, 0, 255)),
+            255
+          ]);
+        }
+      }
     }
   }
   
-  return result;
+  // Step 4: Resize to target_hw using nearest neighbor (matching Python line 56)
+  return resizeNearest(processedImage, targetHW[0], targetHW[1]);
 }
 
 /**

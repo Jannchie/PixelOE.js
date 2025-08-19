@@ -3,24 +3,13 @@
  */
 
 /**
- * Calculate median of an array
+ * Calculate median of an array (exact implementation to match Python)
  */
 export function median(arr: number[]): number {
   if (arr.length === 0) return 0;
   if (arr.length === 1) return arr[0];
   
-  // Use a more efficient approach for large arrays
-  if (arr.length > 1000) {
-    // For large arrays, use approximate median (faster)
-    const sample = [];
-    const step = Math.max(1, Math.floor(arr.length / 1000));
-    for (let i = 0; i < arr.length; i += step) {
-      sample.push(arr[i]);
-    }
-    return median(sample);
-  }
-  
-  // For smaller arrays, use exact median
+  // Always use exact median for consistency with Python
   const sorted = arr.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   

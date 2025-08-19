@@ -5,6 +5,49 @@ import { PixelImageData } from './imageData';
  */
 
 /**
+ * Generate circle kernel (matching Python implementation exactly)
+ */
+function generatePythonCircleKernel(r: number): number[][] {
+  const intR = Math.floor(r);
+  const size = 2 * intR + 1;
+  const kernel = Array(size).fill(0).map(() => Array(size).fill(0));
+  
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const points = [
+        [i - 0.5, j - 0.5], [i - 0.5, j + 0.5], [i + 0.5, j - 0.5], [i + 0.5, j + 0.5],
+        [i, j + 0.5], [i, j - 0.5], [i + 0.5, j], [i - 0.5, j]
+      ];
+      
+      const distances = points.map(p => Math.sqrt((p[0] - intR) ** 2 + (p[1] - intR) ** 2));
+      const maxDistance = Math.max(...distances);
+      const minDistance = Math.min(...distances);
+      
+      if (maxDistance <= r) {
+        kernel[i][j] = 1;
+      } else if (minDistance <= r) {
+        const b = (r - minDistance) / (maxDistance - minDistance);
+        kernel[i][j] = b;
+      }
+    }
+  }
+  
+  return kernel;
+}
+
+/**
+ * Predefined kernels matching Python KERNELS
+ */
+const PYTHON_KERNELS: { [key: number]: number[][] } = {
+  1: generatePythonCircleKernel(1),
+  2: generatePythonCircleKernel(1.5),
+  3: generatePythonCircleKernel(2).slice(1, 4).map(row => row.slice(1, 4)),
+  4: generatePythonCircleKernel(2.5),
+  5: generatePythonCircleKernel(3).slice(1, 6).map(row => row.slice(1, 6)),
+  6: generatePythonCircleKernel(3.5),
+};
+
+/**
  * Create expansion kernel (3x3 all ones - matching Python kernel_expansion)
  */
 export function createExpansionKernel(): number[][] {
@@ -159,4 +202,118 @@ export function opening(imageData: PixelImageData, kernelSize: number = 3): Pixe
 export function closing(imageData: PixelImageData, kernelSize: number = 3): PixelImageData {
   const dilated = dilate(imageData, kernelSize);
   return erode(dilated, kernelSize);
+}
+
+/**
+ * Advanced morphological operation matching Python dilate_cont
+ */
+export function dilateWithPythonKernel(imageData: PixelImageData, iterations: number = 1): PixelImageData {
+  const kernelIndex = Math.min(Math.max(1, iterations), 6);
+  const kernel = PYTHON_KERNELS[kernelIndex];
+  
+  let result = imageData;
+  const kernelHalf = Math.floor(kernel.length / 2);
+  
+  for (let iter = 0; iter < 1; iter++) { // Only 1 iteration as kernel handles the strength
+    const temp = new PixelImageData(result.width, result.height);
+    
+    for (let y = 0; y < result.height; y++) {
+      for (let x = 0; x < result.width; x++) {
+        let maxR = 0, maxG = 0, maxB = 0, maxA = 0;
+        
+        // Apply kernel
+        for (let ky = 0; ky < kernel.length; ky++) {
+          for (let kx = 0; kx < kernel[ky].length; kx++) {
+            const weight = kernel[ky][kx];
+            if (weight <= 0) continue;
+            
+            const px = Math.min(Math.max(x + kx - kernelHalf, 0), result.width - 1);
+            const py = Math.min(Math.max(y + ky - kernelHalf, 0), result.height - 1);
+            
+            const [r, g, b, a] = result.getPixel(px, py);
+            
+            // Weighted addition matching Python implementation
+            const weightedR = (r / 255 + weight - 1) * 255;
+            const weightedG = (g / 255 + weight - 1) * 255;
+            const weightedB = (b / 255 + weight - 1) * 255;
+            const weightedA = (a / 255 + weight - 1) * 255;
+            
+            if (weightedR > maxR) maxR = weightedR;
+            if (weightedG > maxG) maxG = weightedG;
+            if (weightedB > maxB) maxB = weightedB;
+            if (weightedA > maxA) maxA = weightedA;
+          }
+        }
+        
+        // Clamp to [0, 255] as per Python implementation
+        temp.setPixel(x, y, [
+          Math.max(0, Math.min(255, maxR)),
+          Math.max(0, Math.min(255, maxG)),
+          Math.max(0, Math.min(255, maxB)),
+          Math.max(0, Math.min(255, maxA))
+        ]);
+      }
+    }
+    
+    result = temp;
+  }
+  
+  return result;
+}
+
+/**
+ * Advanced morphological operation matching Python erode_cont
+ */
+export function erodeWithPythonKernel(imageData: PixelImageData, iterations: number = 1): PixelImageData {
+  const kernelIndex = Math.min(Math.max(1, iterations), 6);
+  const kernel = PYTHON_KERNELS[kernelIndex];
+  
+  let result = imageData;
+  const kernelHalf = Math.floor(kernel.length / 2);
+  
+  for (let iter = 0; iter < 1; iter++) { // Only 1 iteration as kernel handles the strength
+    const temp = new PixelImageData(result.width, result.height);
+    
+    for (let y = 0; y < result.height; y++) {
+      for (let x = 0; x < result.width; x++) {
+        let minR = 255, minG = 255, minB = 255, minA = 255;
+        
+        // Apply kernel
+        for (let ky = 0; ky < kernel.length; ky++) {
+          for (let kx = 0; kx < kernel[ky].length; kx++) {
+            const weight = kernel[ky][kx];
+            if (weight <= 0) continue;
+            
+            const px = Math.min(Math.max(x + kx - kernelHalf, 0), result.width - 1);
+            const py = Math.min(Math.max(y + ky - kernelHalf, 0), result.height - 1);
+            
+            const [r, g, b, a] = result.getPixel(px, py);
+            
+            // Weighted subtraction matching Python implementation
+            const weightedR = (r / 255 - weight + 1) * 255;
+            const weightedG = (g / 255 - weight + 1) * 255;
+            const weightedB = (b / 255 - weight + 1) * 255;
+            const weightedA = (a / 255 - weight + 1) * 255;
+            
+            if (weightedR < minR) minR = weightedR;
+            if (weightedG < minG) minG = weightedG;
+            if (weightedB < minB) minB = weightedB;
+            if (weightedA < minA) minA = weightedA;
+          }
+        }
+        
+        // Clamp to [0, 255]
+        temp.setPixel(x, y, [
+          Math.max(0, Math.min(255, minR)),
+          Math.max(0, Math.min(255, minG)),
+          Math.max(0, Math.min(255, minB)),
+          Math.max(0, Math.min(255, minA))
+        ]);
+      }
+    }
+    
+    result = temp;
+  }
+  
+  return result;
 }

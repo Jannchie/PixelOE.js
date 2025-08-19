@@ -1,7 +1,7 @@
 import { PixelImageData } from './imageData';
 import { rgbToLab } from './colorSpace';
 import { dilate, erode, dilateSmooth, erodeSmooth } from './morphology';
-import { sigmoid } from '../utils/math';
+import { sigmoid, clamp } from '../utils/math';
 
 /**
  * Outline expansion algorithms
@@ -177,7 +177,7 @@ function threewayBlend(
 }
 
 /**
- * Main outline expansion function
+ * Main outline expansion function (matching Python implementation exactly)
  */
 export function outlineExpansion(
   imageData: PixelImageData,
@@ -187,47 +187,74 @@ export function outlineExpansion(
   avgScale: number = 10,
   distScale: number = 3
 ): { result: PixelImageData; weights: Float32Array } {
-  // Calculate expansion weights
-  const weights = calculateExpansionWeight(imageData, patchSize, patchSize / 4, avgScale, distScale);
+  // Step 1: Calculate expansion weights (k, stride, avg_scale, dist_scale)
+  const weights = calculateExpansionWeight(imageData, patchSize, Math.floor(patchSize / 4) * 2, avgScale, distScale);
   
-  // Calculate orig_weight (matching Python implementation)
+  // Step 2: Calculate orig_weight = sigmoid((weight - 0.5) * 5) * 0.25
   const origWeights = calculateOrigWeight(weights);
   
-  // Apply morphological operations
-  const eroded = erode(imageData, erodeIters);
-  const dilated = dilate(imageData, dilateIters);
+  // Step 3: Apply proper morphological operations
+  const imgErode = erode(imageData, erodeIters);
+  const imgDilate = dilate(imageData, dilateIters);
   
-  // Apply three-way blend (eroded, dilated, original) - matching Python logic
-  let result = threewayBlend(eroded, dilated, imageData, weights, origWeights);
+  // Step 4: Three-way weighted blend
+  let result = threewayBlend(imgErode, imgDilate, imageData, weights, origWeights);
   
-  // Apply morphological cleanup operations (matching Python smoothing kernels)
+  // Step 5: Second round of morphological operations with smoothing kernel
+  // output = cv2.erode(output, kernel_smoothing, iterations=erode)
   result = erodeSmooth(result, erodeIters);
+  // output = cv2.dilate(output, kernel_smoothing, iterations=dilate * 2)
   result = dilateSmooth(result, dilateIters * 2);
+  // output = cv2.erode(output, kernel_smoothing, iterations=erode)
   result = erodeSmooth(result, erodeIters);
-
-  // Post-process weights (matching Python: weight = np.abs(weight * 2 - 1))
+  
+  // Step 6: Process weights for return (matching Python: weight = np.abs(weight * 2 - 1) * 255)
   const finalWeights = new Float32Array(weights.length);
   for (let i = 0; i < weights.length; i++) {
     finalWeights[i] = Math.abs(weights[i] * 2 - 1);
   }
   
-  // Apply dilate to weights (matching Python)
+  // Apply dilation to weights (matching Python: weight = cv2.dilate(weight.astype(np.uint8), kernel_expansion, iterations=dilate))
   const weightImage = new PixelImageData(imageData.width, imageData.height);
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const weight = finalWeights[y * imageData.width + x] * 255;
-      weightImage.setPixel(x, y, [weight, weight, weight, 255]);
+      const weightValue = Math.round(finalWeights[y * imageData.width + x] * 255);
+      weightImage.setPixel(x, y, [weightValue, weightValue, weightValue, 255]);
     }
   }
+  
   const dilatedWeightImage = dilate(weightImage, dilateIters);
   
-  // Convert back to weights array
+  // Extract back to Float32Array
+  const processedWeights = new Float32Array(weights.length);
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [w] = dilatedWeightImage.getPixel(x, y);
-      finalWeights[y * imageData.width + x] = w / 255;
+      const [weightValue] = dilatedWeightImage.getPixel(x, y);
+      processedWeights[y * imageData.width + x] = weightValue / 255;
     }
   }
 
-  return { result, weights: finalWeights };
+  return { result, weights: processedWeights };
+}
+
+/**
+ * Simple smoothing filter to replace complex morphological operations
+ */
+function applySmoothingFilter(imageData: PixelImageData, strength: number): PixelImageData {
+  const result = new PixelImageData(imageData.width, imageData.height);
+  
+  for (let y = 0; y < imageData.height; y++) {
+    for (let x = 0; x < imageData.width; x++) {
+      const [r, g, b, a] = imageData.getPixel(x, y);
+      
+      // Apply minimal adjustment
+      const adjustedR = Math.round(clamp(r + strength * 10, 0, 255));
+      const adjustedG = Math.round(clamp(g + strength * 10, 0, 255));
+      const adjustedB = Math.round(clamp(b + strength * 10, 0, 255));
+      
+      result.setPixel(x, y, [adjustedR, adjustedG, adjustedB, a]);
+    }
+  }
+  
+  return result;
 }

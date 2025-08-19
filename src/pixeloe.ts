@@ -11,8 +11,9 @@ import { type DitherMethod } from './core/dithering';
  * PixelOE configuration options
  */
 export interface PixelOEOptions {
-  pixelSize: number;
-  thickness: number;
+  pixelSize: number;        // patch_size in Python demo
+  thickness: number;        // thickness in Python demo  
+  targetSize?: number;      // target_size in Python demo (new parameter)
   mode: 'contrast' | 'center' | 'nearest' | 'bilinear' | 'k-centroid' | 'lanczos';
   colorMatching: boolean;
   contrast: number;
@@ -49,8 +50,9 @@ export class PixelOE {
 
   constructor(options: Partial<PixelOEOptions> = {}) {
     this.options = {
-      pixelSize: 6,
-      thickness: 3,
+      pixelSize: 6,            // patch_size (demo default)
+      thickness: 3,            // thickness (demo uses 1-2, but keep 3 as default)
+      targetSize: 256,         // target_size (matching demo default)
       mode: 'contrast',
       colorMatching: true,
       contrast: 1.0,
@@ -194,45 +196,118 @@ export class PixelOE {
   }
 
   /**
+   * Apply target size resize (matching Python pixelize.py logic)
+   */
+  private applyTargetSizeResize(imageData: PixelImageData): PixelImageData {
+    const { width: w, height: h } = imageData;
+    const ratio = w / h;
+    const targetSize = this.options.targetSize || 256;
+    const patchSize = this.options.pixelSize;
+    
+    // Calculate target_org_size and target_org_hw (matching Python logic)
+    // target_org_size = (target_size**2 * patch_size**2 / ratio) ** 0.5
+    const targetOrgSize = Math.sqrt((targetSize * targetSize * patchSize * patchSize) / ratio);
+    const targetOrgHW: [number, number] = [
+      Math.floor(targetOrgSize * ratio), // width
+      Math.floor(targetOrgSize)         // height
+    ];
+    
+    console.log(`Target size calculation: targetSize=${targetSize}, patchSize=${patchSize}, ratio=${ratio}`);
+    console.log(`targetOrgSize=${targetOrgSize}, targetOrgHW=[${targetOrgHW[0]}, ${targetOrgHW[1]}]`);
+    
+    // Resize image to target_org_hw (matching Python: img = cv2.resize(img, target_org_hw))
+    return this.resizeBilinear(imageData, targetOrgHW[0], targetOrgHW[1]);
+  }
+
+  /**
+   * Add padding to ensure image dimensions are compatible with pixel size (matching Python)
+   */
+  private addPadding(imageData: PixelImageData, pixelSize: number): PixelImageData {
+    const { width: w, height: h } = imageData;
+    
+    const padH = pixelSize - (h % pixelSize);
+    const padW = pixelSize - (w % pixelSize);
+    
+    // No padding needed if already divisible
+    if (padH === pixelSize && padW === pixelSize) {
+      return imageData;
+    }
+    
+    // Calculate padding distribution (matching Python pad behavior)
+    const padTop = Math.floor(padH / 2);
+    const padBottom = padH - padTop;
+    const padLeft = Math.floor(padW / 2);
+    const padRight = padW - padLeft;
+    
+    const paddedWidth = w + padLeft + padRight;
+    const paddedHeight = h + padTop + padBottom;
+    
+    const paddedImage = new PixelImageData(paddedWidth, paddedHeight);
+    
+    // Fill with replicated edge pixels (matching Python "replicate" mode)
+    for (let y = 0; y < paddedHeight; y++) {
+      for (let x = 0; x < paddedWidth; x++) {
+        let srcX = x - padLeft;
+        let srcY = y - padTop;
+        
+        // Clamp to edge pixels for padding
+        srcX = Math.max(0, Math.min(srcX, w - 1));
+        srcY = Math.max(0, Math.min(srcY, h - 1));
+        
+        const pixel = imageData.getPixel(srcX, srcY);
+        paddedImage.setPixel(x, y, pixel);
+      }
+    }
+    
+    return paddedImage;
+  }
+
+  /**
    * Main pixelize processing function
    */
   pixelize(imageData: PixelImageData, returnIntermediate: boolean = false): PixelOEResult {
     // Preprocess large images to avoid memory issues
     let processedImageData = this.preprocessImage(imageData);
     
+    // Apply Python-style target size calculation and resize (matching pixelize.py)
+    processedImageData = this.applyTargetSizeResize(processedImageData);
+    
+    // Skip padding for now to maintain original behavior
+    // processedImageData = this.addPadding(processedImageData, this.options.pixelSize);
+    
     const originalImageData = processedImageData.clone();
     let result = processedImageData.clone();
     let expansionWeights: Float32Array | undefined;
 
-    // Step 1: Optional sharpening (before other processing)
-    if (this.options.sharpenMode && this.options.sharpenMode !== 'none') {
-      result = applySharpen(result, this.options.sharpenMode, this.options.sharpenStrength || 1.0);
-    }
-
-    // Step 2: Outline expansion
+    // Step 1: Outline expansion (before sharpening, matching Python)
     if (this.options.thickness > 0) {
       const expansion = outlineExpansion(
         result,
         this.options.thickness,
         this.options.thickness,
-        16, // patchSize
-        10, // avgScale
-        3   // distScale
+        this.options.pixelSize, // patchSize (matching Python: patch_size)
+        9, // avgScale (matching Python: 9)
+        4  // distScale (matching Python: 4)
       );
       result = expansion.result;
       expansionWeights = expansion.weights;
     }
 
-    // Step 3: Color matching
+    // Step 2: Optional sharpening (after outline expansion, matching Python)
+    if (this.options.sharpenMode && this.options.sharpenMode !== 'none') {
+      result = applySharpen(result, this.options.sharpenMode, this.options.sharpenStrength || 1.0);
+    }
+
+    // Step 3: First color matching
     if (this.options.colorMatching) {
       result = matchColor(result, originalImageData);
     }
 
     // Step 4: Downscaling
     if (!this.options.noDownscale) {
-      // Calculate target size
-      const totalPixels = processedImageData.width * processedImageData.height;
-      const targetSize = Math.floor(Math.sqrt(totalPixels) / this.options.pixelSize);
+      // Use targetSize parameter if provided, otherwise calculate from pixelSize (backward compatibility)
+      const targetSize = this.options.targetSize || 
+        Math.floor(Math.sqrt(processedImageData.width * processedImageData.height) / this.options.pixelSize);
       
       switch (this.options.mode) {
         case 'contrast':
@@ -264,17 +339,23 @@ export class PixelOE {
           result = kCentroidDownscale(result, targetSize, this.options.kCentroids || 2);
           break;
         default:
-          result = contrastDownscale(result, targetSize);
+          result = contrastDownscale(result, this.options.pixelSize);
       }
     }
 
-    // Step 5: Color quantization and dithering
+    // Step 5: Color quantization and dithering (simplified)
+    let preQuantResult = result; // Store for second color matching
     if (this.options.doQuantization) {
       result = quantizeAndDither(
         result,
         this.options.numColors || 32,
         this.options.ditherMethod || 'none'
       );
+      
+      // Second color matching after quantization (key difference from original)
+      if (this.options.colorMatching) {
+        result = matchColor(result, preQuantResult);
+      }
     }
 
     // Step 6: Color styling

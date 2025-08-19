@@ -189,10 +189,10 @@
           
           <!-- Sliders -->
           <div class="space-y-4">
-            <!-- Pixel Size -->
+            <!-- Pixel Size (Patch Size) -->
             <div>
               <div class="flex justify-between items-center mb-2">
-                <label class="text-sm font-medium text-gray-700">Pixel Size</label>
+                <label class="text-sm font-medium text-gray-700">Pixel Size (Patch)</label>
                 <span class="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded font-medium">{{ options.pixelSize }}</span>
               </div>
               <input
@@ -206,10 +206,27 @@
               />
             </div>
 
-            <!-- Outline -->
+            <!-- Target Size -->
             <div>
               <div class="flex justify-between items-center mb-2">
-                <label class="text-sm font-medium text-gray-700">Outline</label>
+                <label class="text-sm font-medium text-gray-700">Target Size</label>
+                <span class="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded font-medium">{{ options.targetSize }}</span>
+              </div>
+              <input
+                type="range"
+                v-model.number="options.targetSize"
+                min="64"
+                max="512"
+                step="16"
+                @input="handleOptionsChange"
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer range-gray"
+              />
+            </div>
+
+            <!-- Thickness (Outline) -->
+            <div>
+              <div class="flex justify-between items-center mb-2">
+                <label class="text-sm font-medium text-gray-700">Thickness (Outline)</label>
                 <span class="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded font-medium">{{ options.thickness }}</span>
               </div>
               <input
@@ -355,15 +372,16 @@ const showSettings = ref(false)
 const showingOriginal = ref(false)
 
 const options = reactive<PixelOEOptions>({
-  pixelSize: 8,  // 更大的默认像素大小
-  thickness: 2,  // 适中的轮廓
+  pixelSize: 8,      // patch_size: 更大的默认像素大小
+  thickness: 2,      // thickness: 适中的轮廓
+  targetSize: 256,   // target_size: 目标尺寸 (matching demo)
   mode: 'contrast',  // 最佳质量模式
   colorMatching: true,
-  contrast: 1.2,  // 稍微增强对比度
-  saturation: 1.1,  // 稍微增强饱和度
+  contrast: 1.2,     // 稍微增强对比度
+  saturation: 1.1,   // 稍微增强饱和度
   noUpscale: false,
   noDownscale: false,
-  kCentroids: 3  // 更好的聚类效果
+  kCentroids: 3      // 更好的聚类效果
 })
 
 // Simplified mode options
