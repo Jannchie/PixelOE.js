@@ -47,7 +47,8 @@
               <div class="text-gray-600">
                 <div class="w-16 h-16 mx-auto mb-4 i-carbon-cloud-upload"></div>
                 <p class="font-semibold text-lg mb-2">Upload Your Image</p>
-                <p class="text-sm text-gray-500">PNG, JPG, WEBP</p>
+                <p class="text-sm text-gray-500 mb-1">PNG, JPG, WEBP</p>
+                <p class="text-xs text-gray-400">or paste image from clipboard</p>
               </div>
             </div>
           </div>
@@ -338,7 +339,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
 import { PixelOE, PixelImageData, type PixelOEOptions } from '../index'
 
 // Reactive state
@@ -397,8 +398,36 @@ const simpleModes = [
 // Create PixelOE instance
 let pixelOE: PixelOE
 
+// Store the paste handler for cleanup
+let pasteHandler: ((event: ClipboardEvent) => void) | null = null
+
 onMounted(() => {
   pixelOE = new PixelOE(options)
+  
+  // Add paste event listener
+  pasteHandler = (event: ClipboardEvent) => {
+    const items = event.clipboardData?.items
+    if (!items) return
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          handlePastedImage(file)
+        }
+        break
+      }
+    }
+  }
+  
+  document.addEventListener('paste', pasteHandler)
+})
+
+onUnmounted(() => {
+  if (pasteHandler) {
+    document.removeEventListener('paste', pasteHandler)
+  }
 })
 
 
@@ -417,6 +446,18 @@ async function handleFileSelect(event: Event) {
   } catch (error) {
     console.error('Error loading image:', error)
     alert('Failed to load image, please try again')
+  }
+}
+
+async function handlePastedImage(file: File) {
+  try {
+    originalImage.value = await pixelOE.loadImage(file)
+    await nextTick()
+    drawOriginalImage()
+    resultImage.value = null // Clear previous result
+  } catch (error) {
+    console.error('Error loading pasted image:', error)
+    alert('Failed to load pasted image, please try again')
   }
 }
 
@@ -441,14 +482,14 @@ async function processImage() {
     drawResultImage()
   } catch (error) {
     console.error('Error processing image:', error)
-    alert('Processing failed: ' + error.message)
+    alert('Processing failed: ' + (error instanceof Error ? error.message : String(error)))
   } finally {
     processing.value = false
   }
 }
 
 // Async wrapper to prevent UI blocking
-async function processImageAsync(imageData: PixelImageData) {
+async function processImageAsync(imageData: PixelImageData): Promise<{ result: PixelImageData }> {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       try {
