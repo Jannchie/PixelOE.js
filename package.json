@@ -12,10 +12,12 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "pica": "^9.0.1",
     "vue": "^3.5.18"
   },
   "devDependencies": {
     "@iconify-json/carbon": "^1.2.13",
+    "@types/pica": "^9.0.5",
     "@unocss/preset-icons": "^66.4.2",
     "@unocss/preset-uno": "^66.4.2",
     "@unocss/vite": "^66.4.2",

@@ -1,7 +1,7 @@
 import { PixelImageData } from './imageData';
 import { rgbToLab } from './colorSpace';
 import { dilate, erode, dilateSmooth, erodeSmooth } from './morphology';
-import { sigmoid, clamp } from '../utils/math';
+import { sigmoid } from '../utils/math';
 
 /**
  * Outline expansion algorithms
@@ -237,24 +237,3 @@ export function outlineExpansion(
   return { result, weights: processedWeights };
 }
 
-/**
- * Simple smoothing filter to replace complex morphological operations
- */
-function applySmoothingFilter(imageData: PixelImageData, strength: number): PixelImageData {
-  const result = new PixelImageData(imageData.width, imageData.height);
-  
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = imageData.getPixel(x, y);
-      
-      // Apply minimal adjustment
-      const adjustedR = Math.round(clamp(r + strength * 10, 0, 255));
-      const adjustedG = Math.round(clamp(g + strength * 10, 0, 255));
-      const adjustedB = Math.round(clamp(b + strength * 10, 0, 255));
-      
-      result.setPixel(x, y, [adjustedR, adjustedG, adjustedB, a]);
-    }
-  }
-  
-  return result;
-}

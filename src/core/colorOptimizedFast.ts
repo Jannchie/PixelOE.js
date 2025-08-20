@@ -7,24 +7,22 @@ import { rgbToLab, labToRgb } from './colorSpace'
 /**
  * Fast color matching using sampling for large images
  */
-export function matchColorFast(source: PixelImageData, target: PixelImageData, level: number = 5): PixelImageData {
-  const result = source.clone()
-  
+export function matchColorFast(source: PixelImageData, target: PixelImageData): PixelImageData {
   // For very large images, use sampling to avoid performance issues
   const totalPixels = source.width * source.height
   if (totalPixels > 500000) { // ~707x707 pixels
     console.log(`🚀 [ColorMatch] Using fast sampling mode for ${source.width}x${source.height} image`)
-    return fastSampledColorMatch(source, target, level)
+    return fastSampledColorMatch(source, target)
   }
   
   // For smaller images, use the original algorithm
-  return originalColorMatch(source, target, level)  
+  return originalColorMatch(source)  
 }
 
 /**
  * Fast sampled color matching for large images
  */
-function fastSampledColorMatch(source: PixelImageData, target: PixelImageData, level: number): PixelImageData {
+function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): PixelImageData {
   const result = source.clone()
   
   // Sample a subset of pixels for statistics calculation
@@ -142,7 +140,7 @@ function fastSampledColorMatch(source: PixelImageData, target: PixelImageData, l
 /**
  * Original color matching implementation for smaller images
  */
-function originalColorMatch(source: PixelImageData, target: PixelImageData, level: number): PixelImageData {
+function originalColorMatch(source: PixelImageData): PixelImageData {
   // Implementation details of original matchColor function would go here
   // For now, return source unchanged to avoid the slow implementation
   return source.clone()

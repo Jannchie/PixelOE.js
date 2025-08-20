@@ -1,26 +1,7 @@
 import { PixelImageData } from './imageData';
 import { rgbToLab, labToRgb } from './colorSpace';
 import { median, mean, clamp } from '../utils/math';
-
-/**
- * Simple nearest neighbor resize
- */
-function resizeNearest(imageData: PixelImageData, newWidth: number, newHeight: number): PixelImageData {
-  const result = new PixelImageData(newWidth, newHeight);
-  const scaleX = imageData.width / newWidth;
-  const scaleY = imageData.height / newHeight;
-
-  for (let y = 0; y < newHeight; y++) {
-    for (let x = 0; x < newWidth; x++) {
-      const srcX = Math.floor(x * scaleX);
-      const srcY = Math.floor(y * scaleY);
-      const pixel = imageData.getPixel(srcX, srcY);
-      result.setPixel(x, y, pixel);
-    }
-  }
-
-  return result;
-}
+import { resizeImageSync } from './imageResize';
 
 /**
  * Downscaling algorithms
@@ -122,7 +103,7 @@ export function contrastDownscale(imageData: PixelImageData, targetSize: number 
   }
   
   // Step 4: Resize to target_hw using nearest neighbor (matching Python line 56)
-  return resizeNearest(processedImage, targetHW[0], targetHW[1]);
+  return resizeImageSync(processedImage, targetHW[0], targetHW[1], 'nearest');
 }
 
 /**

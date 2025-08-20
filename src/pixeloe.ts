@@ -1,12 +1,11 @@
 import { PixelImageData } from './core/imageData';
 import { colorStyling } from './core/color';
 import { matchColorFast } from './core/colorOptimizedFast';
-import { canvasBilinearResize, canvasNearestResize } from './core/resizeCanvas';
+import { resizeImageSync } from './core/imageResize';
 import { outlineExpansion } from './core/outline';
 import { contrastDownscale, nearestUpscale, centerDownscale, kCentroidDownscale } from './core/downscale';
 import { quantizeAndDither } from './core/quantization';
 import { applySharpen, type SharpenMode } from './core/sharpen';
-import { highQualityResize } from './core/resample';
 import { type DitherMethod } from './core/dithering';
 
 /**
@@ -194,7 +193,7 @@ export class PixelOE {
     
     console.log(`Large image detected (${imageData.width}x${imageData.height}), resizing to ${newWidth}x${newHeight}`);
     
-    return this.resizeBilinear(imageData, newWidth, newHeight);
+    return resizeImageSync(imageData, newWidth, newHeight, 'bilinear');
   }
 
   /**
@@ -217,8 +216,8 @@ export class PixelOE {
     console.log(`Target size calculation: targetSize=${targetSize}, patchSize=${patchSize}, ratio=${ratio}`);
     console.log(`targetOrgSize=${targetOrgSize}, targetOrgHW=[${targetOrgHW[0]}, ${targetOrgHW[1]}]`);
     
-    // Resize image to target_org_hw (using Canvas API for maximum performance)
-    return canvasBilinearResize(imageData, targetOrgHW[0], targetOrgHW[1]);
+    // Resize image to target_org_hw (using professional Pica library for maximum quality)
+    return resizeImageSync(imageData, targetOrgHW[0], targetOrgHW[1], 'bilinear');
   }
 
 
@@ -301,19 +300,19 @@ export class PixelOE {
           const ratio = imageData.width / imageData.height;
           const targetHeight = Math.floor(Math.sqrt(targetSize * targetSize / ratio));
           const targetWidth = Math.floor(targetHeight * ratio);
-          result = canvasNearestResize(result, targetWidth, targetHeight);
+          result = resizeImageSync(result, targetWidth, targetHeight, 'nearest');
           break;
         case 'bilinear':
           const ratioB = imageData.width / imageData.height;
           const targetHeightB = Math.floor(Math.sqrt(targetSize * targetSize / ratioB));
           const targetWidthB = Math.floor(targetHeightB * ratioB);
-          result = canvasBilinearResize(result, targetWidthB, targetHeightB);
+          result = resizeImageSync(result, targetWidthB, targetHeightB, 'bilinear');
           break;
         case 'lanczos':
           const ratioL = imageData.width / imageData.height;
           const targetHeightL = Math.floor(Math.sqrt(targetSize * targetSize / ratioL));
           const targetWidthL = Math.floor(targetHeightL * ratioL);
-          result = highQualityResize(result, targetWidthL, targetHeightL, this.options.resampleMethod);
+          result = resizeImageSync(result, targetWidthL, targetHeightL, 'bilinear');
           break;
         case 'k-centroid':
           result = kCentroidDownscale(result, targetSize, this.options.kCentroids || 2);
@@ -371,86 +370,6 @@ export class PixelOE {
     };
   }
 
-  /**
-   * Simple nearest neighbor resize
-   */
-  private resizeNearest(imageData: PixelImageData, newWidth: number, newHeight: number): PixelImageData {
-    const result = new PixelImageData(newWidth, newHeight);
-    const scaleX = imageData.width / newWidth;
-    const scaleY = imageData.height / newHeight;
-
-    for (let y = 0; y < newHeight; y++) {
-      for (let x = 0; x < newWidth; x++) {
-        const srcX = Math.floor(x * scaleX);
-        const srcY = Math.floor(y * scaleY);
-        const pixel = imageData.getPixel(srcX, srcY);
-        result.setPixel(x, y, pixel);
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Simple bilinear resize
-   */
-  private resizeBilinear(imageData: PixelImageData, newWidth: number, newHeight: number): PixelImageData {
-    const result = new PixelImageData(newWidth, newHeight);
-    const scaleX = imageData.width / newWidth;
-    const scaleY = imageData.height / newHeight;
-
-    for (let y = 0; y < newHeight; y++) {
-      for (let x = 0; x < newWidth; x++) {
-        const srcX = x * scaleX;
-        const srcY = y * scaleY;
-
-        const x1 = Math.floor(srcX);
-        const y1 = Math.floor(srcY);
-        const x2 = Math.min(x1 + 1, imageData.width - 1);
-        const y2 = Math.min(y1 + 1, imageData.height - 1);
-
-        const dx = srcX - x1;
-        const dy = srcY - y1;
-
-        const [r1, g1, b1, a1] = imageData.getPixel(x1, y1);
-        const [r2, g2, b2, a2] = imageData.getPixel(x2, y1);
-        const [r3, g3, b3, a3] = imageData.getPixel(x1, y2);
-        const [r4, g4, b4, a4] = imageData.getPixel(x2, y2);
-
-        const r = Math.round(
-          r1 * (1 - dx) * (1 - dy) +
-          r2 * dx * (1 - dy) +
-          r3 * (1 - dx) * dy +
-          r4 * dx * dy
-        );
-
-        const g = Math.round(
-          g1 * (1 - dx) * (1 - dy) +
-          g2 * dx * (1 - dy) +
-          g3 * (1 - dx) * dy +
-          g4 * dx * dy
-        );
-
-        const b = Math.round(
-          b1 * (1 - dx) * (1 - dy) +
-          b2 * dx * (1 - dy) +
-          b3 * (1 - dx) * dy +
-          b4 * dx * dy
-        );
-
-        const a = Math.round(
-          a1 * (1 - dx) * (1 - dy) +
-          a2 * dx * (1 - dy) +
-          a3 * (1 - dx) * dy +
-          a4 * dx * dy
-        );
-
-        result.setPixel(x, y, [r, g, b, a]);
-      }
-    }
-
-    return result;
-  }
 
   /**
    * Convert PixelImageData to Canvas element

@@ -14,7 +14,7 @@ export * from './core/color';
 export * from './core/quantization';
 export * from './core/dithering';
 export * from './core/sharpen';
-export * from './core/resample';
+export * from './core/imageResize';
 
 // Utilities
 export * from './utils/math';
