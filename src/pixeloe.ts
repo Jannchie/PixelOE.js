@@ -51,9 +51,9 @@ export class PixelOE {
 
   constructor(options: Partial<PixelOEOptions> = {}) {
     this.options = {
-      pixelSize: 6,            // patch_size (demo default)
-      thickness: 3,            // thickness (demo uses 1-2, but keep 3 as default)
-      targetSize: 128,         // target_size (matching demo default)
+      pixelSize: 6,            // patch_size
+      thickness: 3,            // thickness 
+      targetSize: 128,         // target_size 
       mode: 'contrast',
       colorMatching: true,
       contrast: 1.0,

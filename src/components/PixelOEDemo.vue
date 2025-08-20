@@ -374,7 +374,7 @@ const showingOriginal = ref(false)
 
 const options = reactive<PixelOEOptions>({
   pixelSize: 8,      // patch_size: 更大的默认像素大小
-  thickness: 2,      // thickness: 适中的轮廓
+  thickness: 2,      // thickness: 回到 legacy 行为
   targetSize: 256,   // target_size: 目标尺寸 (matching demo)
   mode: 'contrast',  // 最佳质量模式
   colorMatching: true,

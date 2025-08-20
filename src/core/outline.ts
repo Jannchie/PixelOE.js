@@ -66,12 +66,12 @@ function medianOfArray(values: number[]): number {
 }
 
 /**
- * Calculate expansion weight map (matching Python implementation more closely)
+ * Calculate expansion weight map (matching Legacy implementation)
  */
 export function calculateExpansionWeight(
   imageData: PixelImageData, 
-  patchSize: number = 16, 
-  stride: number = 4,
+  patchSize: number = 8, 
+  stride: number = 2,
   avgScale: number = 10,
   distScale: number = 3
 ): Float32Array {
@@ -84,7 +84,7 @@ export function calculateExpansionWeight(
   // Calculate min_y
   const minY = applyChunkOperation(imageData, patchSize, stride, (values) => Math.min(...values));
   
-  // Calculate weight following Python logic
+  // Calculate weight following Legacy logic
   const weights = new Float32Array(imageData.width * imageData.height);
   
   for (let i = 0; i < weights.length; i++) {
@@ -95,7 +95,7 @@ export function calculateExpansionWeight(
     weights[i] = sigmoid(weight);
   }
   
-  // Normalize weights (matching Python: (output - np.min(output)) / (np.max(output)))
+  // Normalize weights (matching Legacy: (output - np.min(output)) / (np.max(output)))
   let minWeight = weights[0];
   let maxWeight = weights[0];
   
@@ -115,8 +115,9 @@ export function calculateExpansionWeight(
 }
 
 
+
 /**
- * Calculate orig_weight based on expansion weight (matching Python implementation)
+ * Calculate orig_weight based on expansion weight (matching Legacy implementation)
  */
 function calculateOrigWeight(weights: Float32Array): Float32Array {
   const origWeights = new Float32Array(weights.length);
@@ -132,7 +133,7 @@ function calculateOrigWeight(weights: Float32Array): Float32Array {
 }
 
 /**
- * Apply three-way weighted blend (erode, dilate, original) - matching Python logic
+ * Apply three-way weighted blend (erode, dilate, original) - matching Legacy logic
  */
 function threewayBlend(
   eroded: PixelImageData, 
@@ -177,7 +178,7 @@ function threewayBlend(
 }
 
 /**
- * Main outline expansion function (matching Python implementation exactly)
+ * Main outline expansion function (matching Legacy implementation exactly)
  */
 export function outlineExpansion(
   imageData: PixelImageData,
@@ -208,13 +209,13 @@ export function outlineExpansion(
   // output = cv2.erode(output, kernel_smoothing, iterations=erode)
   result = erodeSmooth(result, erodeIters);
   
-  // Step 6: Process weights for return (matching Python: weight = np.abs(weight * 2 - 1) * 255)
+  // Step 6: Process weights for return (matching Legacy: weight = np.abs(weight * 2 - 1) * 255)
   const finalWeights = new Float32Array(weights.length);
   for (let i = 0; i < weights.length; i++) {
     finalWeights[i] = Math.abs(weights[i] * 2 - 1);
   }
   
-  // Apply dilation to weights (matching Python: weight = cv2.dilate(weight.astype(np.uint8), kernel_expansion, iterations=dilate))
+  // Apply dilation to weights (matching Legacy: weight = cv2.dilate(weight.astype(np.uint8), kernel_expansion, iterations=dilate))
   const weightImage = new PixelImageData(imageData.width, imageData.height);
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {

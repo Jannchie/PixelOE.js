@@ -205,21 +205,24 @@ export function closing(imageData: PixelImageData, kernelSize: number = 3): Pixe
 }
 
 /**
- * Advanced morphological operation matching Python dilate_cont
+ * Dilate operation using specific kernel (matching PyTorch dilate_cont)
  */
-export function dilateWithPythonKernel(imageData: PixelImageData, iterations: number = 1): PixelImageData {
-  const kernelIndex = Math.min(Math.max(1, iterations), 6);
+export function dilateWithKernel(imageData: PixelImageData, kernelIndex: number, iterations: number = 1): PixelImageData {
   const kernel = PYTHON_KERNELS[kernelIndex];
+  if (!kernel) {
+    throw new Error(`Invalid kernel index: ${kernelIndex}`);
+  }
   
   let result = imageData;
   const kernelHalf = Math.floor(kernel.length / 2);
   
-  for (let iter = 0; iter < 1; iter++) { // Only 1 iteration as kernel handles the strength
+  // Perform iterations
+  for (let iter = 0; iter < iterations; iter++) {
     const temp = new PixelImageData(result.width, result.height);
     
     for (let y = 0; y < result.height; y++) {
       for (let x = 0; x < result.width; x++) {
-        let maxR = 0, maxG = 0, maxB = 0, maxA = 0;
+        let maxR = -Infinity, maxG = -Infinity, maxB = -Infinity, maxA = -Infinity;
         
         // Apply kernel
         for (let ky = 0; ky < kernel.length; ky++) {
@@ -232,11 +235,16 @@ export function dilateWithPythonKernel(imageData: PixelImageData, iterations: nu
             
             const [r, g, b, a] = result.getPixel(px, py);
             
-            // Weighted addition matching Python implementation
-            const weightedR = (r / 255 + weight - 1) * 255;
-            const weightedG = (g / 255 + weight - 1) * 255;
-            const weightedB = (b / 255 + weight - 1) * 255;
-            const weightedA = (a / 255 + weight - 1) * 255;
+            // Matching PyTorch implementation: patches + kernel - 1 (working in [0,1] range)
+            const normalizedR = r / 255;
+            const normalizedG = g / 255;
+            const normalizedB = b / 255;
+            const normalizedA = a / 255;
+            
+            const weightedR = normalizedR + weight - 1;
+            const weightedG = normalizedG + weight - 1;
+            const weightedB = normalizedB + weight - 1;
+            const weightedA = normalizedA + weight - 1;
             
             if (weightedR > maxR) maxR = weightedR;
             if (weightedG > maxG) maxG = weightedG;
@@ -245,12 +253,12 @@ export function dilateWithPythonKernel(imageData: PixelImageData, iterations: nu
           }
         }
         
-        // Clamp to [0, 255] as per Python implementation
+        // Clamp to [0, 1] as per PyTorch implementation, then convert back to [0, 255]
         temp.setPixel(x, y, [
-          Math.max(0, Math.min(255, maxR)),
-          Math.max(0, Math.min(255, maxG)),
-          Math.max(0, Math.min(255, maxB)),
-          Math.max(0, Math.min(255, maxA))
+          Math.round(Math.max(0, Math.min(1, maxR)) * 255),
+          Math.round(Math.max(0, Math.min(1, maxG)) * 255),
+          Math.round(Math.max(0, Math.min(1, maxB)) * 255),
+          Math.round(Math.max(0, Math.min(1, maxA)) * 255)
         ]);
       }
     }
@@ -262,21 +270,24 @@ export function dilateWithPythonKernel(imageData: PixelImageData, iterations: nu
 }
 
 /**
- * Advanced morphological operation matching Python erode_cont
+ * Erode operation using specific kernel (matching PyTorch erode_cont)
  */
-export function erodeWithPythonKernel(imageData: PixelImageData, iterations: number = 1): PixelImageData {
-  const kernelIndex = Math.min(Math.max(1, iterations), 6);
+export function erodeWithKernel(imageData: PixelImageData, kernelIndex: number, iterations: number = 1): PixelImageData {
   const kernel = PYTHON_KERNELS[kernelIndex];
+  if (!kernel) {
+    throw new Error(`Invalid kernel index: ${kernelIndex}`);
+  }
   
   let result = imageData;
   const kernelHalf = Math.floor(kernel.length / 2);
   
-  for (let iter = 0; iter < 1; iter++) { // Only 1 iteration as kernel handles the strength
+  // Perform iterations
+  for (let iter = 0; iter < iterations; iter++) {
     const temp = new PixelImageData(result.width, result.height);
     
     for (let y = 0; y < result.height; y++) {
       for (let x = 0; x < result.width; x++) {
-        let minR = 255, minG = 255, minB = 255, minA = 255;
+        let minR = Infinity, minG = Infinity, minB = Infinity, minA = Infinity;
         
         // Apply kernel
         for (let ky = 0; ky < kernel.length; ky++) {
@@ -289,11 +300,16 @@ export function erodeWithPythonKernel(imageData: PixelImageData, iterations: num
             
             const [r, g, b, a] = result.getPixel(px, py);
             
-            // Weighted subtraction matching Python implementation
-            const weightedR = (r / 255 - weight + 1) * 255;
-            const weightedG = (g / 255 - weight + 1) * 255;
-            const weightedB = (b / 255 - weight + 1) * 255;
-            const weightedA = (a / 255 - weight + 1) * 255;
+            // Matching PyTorch implementation: patches - kernel + 1 (working in [0,1] range)
+            const normalizedR = r / 255;
+            const normalizedG = g / 255;
+            const normalizedB = b / 255;
+            const normalizedA = a / 255;
+            
+            const weightedR = normalizedR - weight + 1;
+            const weightedG = normalizedG - weight + 1;
+            const weightedB = normalizedB - weight + 1;
+            const weightedA = normalizedA - weight + 1;
             
             if (weightedR < minR) minR = weightedR;
             if (weightedG < minG) minG = weightedG;
@@ -302,12 +318,12 @@ export function erodeWithPythonKernel(imageData: PixelImageData, iterations: num
           }
         }
         
-        // Clamp to [0, 255]
+        // Clamp to [0, 1] as per PyTorch implementation, then convert back to [0, 255]
         temp.setPixel(x, y, [
-          Math.max(0, Math.min(255, minR)),
-          Math.max(0, Math.min(255, minG)),
-          Math.max(0, Math.min(255, minB)),
-          Math.max(0, Math.min(255, minA))
+          Math.round(Math.max(0, Math.min(1, minR)) * 255),
+          Math.round(Math.max(0, Math.min(1, minG)) * 255),
+          Math.round(Math.max(0, Math.min(1, minB)) * 255),
+          Math.round(Math.max(0, Math.min(1, minA)) * 255)
         ]);
       }
     }
