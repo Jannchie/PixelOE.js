@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { PixelImageData } from '../src/core/imageData'
 
 /**
@@ -14,14 +14,14 @@ export interface ConsistencyResult {
   differencePercentage: number
 }
 
-export class ConsistencyTester {
+export const ConsistencyTester = {
   /**
    * Compare two images pixel by pixel
    */
-  static compareImages(
-    original: PixelImageData, 
-    optimized: PixelImageData, 
-    tolerance: number = 0
+  compareImages(
+    original: PixelImageData,
+    optimized: PixelImageData,
+    tolerance: number = 0,
   ): ConsistencyResult {
     if (original.width !== optimized.width || original.height !== optimized.height) {
       throw new Error('Images must have the same dimensions for comparison')
@@ -36,7 +36,7 @@ export class ConsistencyTester {
       for (let x = 0; x < original.width; x++) {
         const originalPixel = original.getPixel(x, y)
         const optimizedPixel = optimized.getPixel(x, y)
-        
+
         let pixelDifference = 0
         let hasChannelDifference = false
 
@@ -44,7 +44,7 @@ export class ConsistencyTester {
         for (let channel = 0; channel < 3; channel++) {
           const diff = Math.abs(originalPixel[channel] - optimizedPixel[channel])
           pixelDifference = Math.max(pixelDifference, diff)
-          
+
           if (diff > tolerance) {
             hasChannelDifference = true
           }
@@ -52,7 +52,7 @@ export class ConsistencyTester {
 
         maxDifference = Math.max(maxDifference, pixelDifference)
         totalDifference += pixelDifference
-        
+
         if (hasChannelDifference) {
           differentPixels++
         }
@@ -69,52 +69,54 @@ export class ConsistencyTester {
       averageDifference,
       totalPixels,
       differentPixels,
-      differencePercentage
+      differencePercentage,
     }
-  }
+  },
 
   /**
    * Verify that optimization maintains output consistency
    */
-  static verifyOptimization<T extends any[], R extends PixelImageData>(
+  verifyOptimization<T extends any[], R extends PixelImageData>(
     originalFn: (...args: T) => R,
     optimizedFn: (...args: T) => R,
     args: T,
     tolerance: number = 0,
-    testName: string = 'optimization'
+    testName: string = 'optimization',
   ): boolean {
     console.log(`\n🔍 Consistency check: ${testName}`)
-    
+
     const originalResult = originalFn(...args)
     const optimizedResult = optimizedFn(...args)
-    
+
     const comparison = this.compareImages(originalResult, optimizedResult, tolerance)
-    
+
     if (comparison.isIdentical) {
       console.log(`✅ Perfect consistency: All pixels identical`)
       return true
-    } else {
+    }
+    else {
       console.log(`❌ Consistency issue detected:`)
       console.log(`   Max difference: ${comparison.maxDifference}`)
       console.log(`   Avg difference: ${comparison.averageDifference.toFixed(3)}`)
       console.log(`   Different pixels: ${comparison.differentPixels}/${comparison.totalPixels} (${comparison.differencePercentage.toFixed(2)}%)`)
-      
+
       if (comparison.maxDifference <= tolerance) {
         console.log(`⚠️  Within tolerance (${tolerance}), but not identical`)
         return true
-      } else {
+      }
+      else {
         console.log(`🚫 Exceeds tolerance (${tolerance})`)
         return false
       }
     }
-  }
+  },
 
   /**
    * Create detailed difference map for debugging
    */
-  static createDifferenceMap(
+  createDifferenceMap(
     original: PixelImageData,
-    optimized: PixelImageData
+    optimized: PixelImageData,
   ): PixelImageData {
     if (original.width !== optimized.width || original.height !== optimized.height) {
       throw new Error('Images must have the same dimensions')
@@ -126,36 +128,36 @@ export class ConsistencyTester {
       for (let x = 0; x < original.width; x++) {
         const originalPixel = original.getPixel(x, y)
         const optimizedPixel = optimized.getPixel(x, y)
-        
+
         const rDiff = Math.abs(originalPixel[0] - optimizedPixel[0])
         const gDiff = Math.abs(originalPixel[1] - optimizedPixel[1])
         const bDiff = Math.abs(originalPixel[2] - optimizedPixel[2])
-        
+
         // Amplify differences for visibility
         const maxDiff = Math.max(rDiff, gDiff, bDiff)
         const amplified = Math.min(255, maxDiff * 10)
-        
+
         differenceMap.setPixel(x, y, [amplified, amplified, amplified, 255])
       }
     }
 
     return differenceMap
-  }
+  },
 
   /**
    * Test function consistency with multiple test cases
    */
-  static testFunctionConsistency<T extends any[], R extends PixelImageData>(
+  testFunctionConsistency<T extends any[], R extends PixelImageData>(
     originalFn: (...args: T) => R,
     optimizedFn: (...args: T) => R,
     testCases: T[],
     tolerance: number = 0,
-    functionName: string = 'function'
+    functionName: string = 'function',
   ): boolean {
     console.log(`\n🧪 Testing ${functionName} consistency with ${testCases.length} test cases`)
-    
+
     let allPassed = true
-    
+
     for (let i = 0; i < testCases.length; i++) {
       console.log(`\n📋 Test case ${i + 1}/${testCases.length}`)
       const passed = this.verifyOptimization(
@@ -163,30 +165,31 @@ export class ConsistencyTester {
         optimizedFn,
         testCases[i],
         tolerance,
-        `${functionName} case ${i + 1}`
+        `${functionName} case ${i + 1}`,
       )
-      
+
       if (!passed) {
         allPassed = false
         console.log(`❌ Test case ${i + 1} failed`)
       }
     }
-    
+
     if (allPassed) {
       console.log(`\n✅ All ${testCases.length} test cases passed for ${functionName}`)
-    } else {
+    }
+    else {
       console.log(`\n❌ Some test cases failed for ${functionName}`)
     }
-    
+
     return allPassed
-  }
+  },
 }
 
-describe('Consistency Testing Infrastructure', () => {
+describe('consistency testing infrastructure', () => {
   it('should detect identical images', () => {
     const img1 = new PixelImageData(10, 10)
     const img2 = new PixelImageData(10, 10)
-    
+
     // Fill with same pattern
     for (let y = 0; y < 10; y++) {
       for (let x = 0; x < 10; x++) {
@@ -195,7 +198,7 @@ describe('Consistency Testing Infrastructure', () => {
         img2.setPixel(x, y, color)
       }
     }
-    
+
     const result = ConsistencyTester.compareImages(img1, img2)
     expect(result.isIdentical).toBe(true)
     expect(result.maxDifference).toBe(0)
@@ -205,15 +208,15 @@ describe('Consistency Testing Infrastructure', () => {
   it('should detect differences', () => {
     const img1 = new PixelImageData(10, 10)
     const img2 = new PixelImageData(10, 10)
-    
+
     // Fill with different patterns
     for (let y = 0; y < 10; y++) {
       for (let x = 0; x < 10; x++) {
         img1.setPixel(x, y, [100, 100, 100, 255])
-        img2.setPixel(x, y, [100, 100, 105, 255])  // 5 difference in blue
+        img2.setPixel(x, y, [100, 100, 105, 255]) // 5 difference in blue
       }
     }
-    
+
     const result = ConsistencyTester.compareImages(img1, img2)
     expect(result.isIdentical).toBe(false)
     expect(result.maxDifference).toBe(5)
@@ -223,25 +226,25 @@ describe('Consistency Testing Infrastructure', () => {
   it('should handle tolerance correctly', () => {
     const img1 = new PixelImageData(2, 2)
     const img2 = new PixelImageData(2, 2)
-    
+
     img1.setPixel(0, 0, [100, 100, 100, 255])
-    img2.setPixel(0, 0, [103, 100, 100, 255])  // 3 difference
-    
+    img2.setPixel(0, 0, [103, 100, 100, 255]) // 3 difference
+
     img1.setPixel(1, 0, [100, 100, 100, 255])
-    img2.setPixel(1, 0, [100, 100, 100, 255])  // identical
-    
+    img2.setPixel(1, 0, [100, 100, 100, 255]) // identical
+
     img1.setPixel(0, 1, [100, 100, 100, 255])
-    img2.setPixel(0, 1, [100, 100, 100, 255])  // identical
-    
+    img2.setPixel(0, 1, [100, 100, 100, 255]) // identical
+
     img1.setPixel(1, 1, [100, 100, 100, 255])
-    img2.setPixel(1, 1, [100, 100, 100, 255])  // identical
-    
+    img2.setPixel(1, 1, [100, 100, 100, 255]) // identical
+
     const resultNoTolerance = ConsistencyTester.compareImages(img1, img2, 0)
     expect(resultNoTolerance.isIdentical).toBe(false)
     expect(resultNoTolerance.differentPixels).toBe(1)
-    
+
     const resultWithTolerance = ConsistencyTester.compareImages(img1, img2, 3)
-    expect(resultWithTolerance.isIdentical).toBe(true)   // Within tolerance, so considered identical
-    expect(resultWithTolerance.differentPixels).toBe(0)  // Within tolerance
+    expect(resultWithTolerance.isIdentical).toBe(true) // Within tolerance, so considered identical
+    expect(resultWithTolerance.differentPixels).toBe(0) // Within tolerance
   })
 })

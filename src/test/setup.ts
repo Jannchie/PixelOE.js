@@ -10,7 +10,7 @@ declare global {
 if (typeof performance === 'undefined') {
   // Polyfill performance for older Node.js versions
   globalThis.performance = {
-    now: () => Date.now()
+    now: () => Date.now(),
   } as Performance
 }
 

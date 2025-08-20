@@ -1,3 +1,6 @@
+ignoredBuiltDependencies:
+  - gl
+
 onlyBuiltDependencies:
   - esbuild
   - gl

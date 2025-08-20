@@ -1,6 +1,6 @@
-import { defineConfig } from 'unocss'
-import presetUno from '@unocss/preset-uno'
 import presetIcons from '@unocss/preset-icons'
+import presetUno from '@unocss/preset-uno'
+import { defineConfig } from 'unocss'
 
 export default defineConfig({
   presets: [
@@ -11,8 +11,8 @@ export default defineConfig({
       extraProperties: {
         'display': 'inline-block',
         'vertical-align': 'middle',
-      }
-    })
+      },
+    }),
   ],
   theme: {
     colors: {
@@ -23,9 +23,9 @@ export default defineConfig({
       danger: '#ef4444',
     },
     animation: {
-      'float': 'float 6s ease-in-out infinite',
-      'gradient': 'gradient 8s ease infinite',
-    }
+      float: 'float 6s ease-in-out infinite',
+      gradient: 'gradient 8s ease infinite',
+    },
   },
   shortcuts: {
     'glass': 'backdrop-blur-xl bg-white/80 border border-white/20',
@@ -37,7 +37,7 @@ export default defineConfig({
   },
   rules: [
     ['bg-mesh-gradient', {
-      'background': 'radial-gradient(at 40% 20%, hsla(28,100%,74%,0.1) 0px, transparent 50%), radial-gradient(at 80% 0%, hsla(189,100%,56%,0.1) 0px, transparent 50%), radial-gradient(at 0% 50%, hsla(355,100%,93%,0.1) 0px, transparent 50%), radial-gradient(at 80% 50%, hsla(340,100%,76%,0.1) 0px, transparent 50%), radial-gradient(at 0% 100%, hsla(22,100%,77%,0.1) 0px, transparent 50%), radial-gradient(at 80% 100%, hsla(242,100%,70%,0.1) 0px, transparent 50%), radial-gradient(at 0% 0%, hsla(343,100%,76%,0.1) 0px, transparent 50%)'
-    }]
-  ]
+      background: 'radial-gradient(at 40% 20%, hsla(28,100%,74%,0.1) 0px, transparent 50%), radial-gradient(at 80% 0%, hsla(189,100%,56%,0.1) 0px, transparent 50%), radial-gradient(at 0% 50%, hsla(355,100%,93%,0.1) 0px, transparent 50%), radial-gradient(at 80% 50%, hsla(340,100%,76%,0.1) 0px, transparent 50%), radial-gradient(at 0% 100%, hsla(22,100%,77%,0.1) 0px, transparent 50%), radial-gradient(at 80% 100%, hsla(242,100%,70%,0.1) 0px, transparent 50%), radial-gradient(at 0% 0%, hsla(343,100%,76%,0.1) 0px, transparent 50%)',
+    }],
+  ],
 })
