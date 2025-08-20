@@ -18,7 +18,7 @@ export function matchColorFast(source: PixelImageData, target: PixelImageData, l
   }
   
   // For smaller images, use the original algorithm
-  return originalColorMatch(source, target, level)
+  return originalColorMatch(source, target, level)  
 }
 
 /**

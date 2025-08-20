@@ -1,7 +1,8 @@
 import { PixelImageData } from './core/imageData';
-import { outlineExpansion } from './core/outline';
-import { matchColor, colorStyling } from './core/color';
+import { colorStyling } from './core/color';
 import { matchColorFast } from './core/colorOptimizedFast';
+import { canvasBilinearResize, canvasNearestResize } from './core/resizeCanvas';
+import { outlineExpansion } from './core/outline';
 import { contrastDownscale, nearestUpscale, centerDownscale, kCentroidDownscale } from './core/downscale';
 import { quantizeAndDither } from './core/quantization';
 import { applySharpen, type SharpenMode } from './core/sharpen';
@@ -53,7 +54,7 @@ export class PixelOE {
     this.options = {
       pixelSize: 6,            // patch_size (demo default)
       thickness: 3,            // thickness (demo uses 1-2, but keep 3 as default)
-      targetSize: 256,         // target_size (matching demo default)
+      targetSize: 128,         // target_size (matching demo default)
       mode: 'contrast',
       colorMatching: true,
       contrast: 1.0,
@@ -216,52 +217,10 @@ export class PixelOE {
     console.log(`Target size calculation: targetSize=${targetSize}, patchSize=${patchSize}, ratio=${ratio}`);
     console.log(`targetOrgSize=${targetOrgSize}, targetOrgHW=[${targetOrgHW[0]}, ${targetOrgHW[1]}]`);
     
-    // Resize image to target_org_hw (matching Python: img = cv2.resize(img, target_org_hw))
-    return this.resizeBilinear(imageData, targetOrgHW[0], targetOrgHW[1]);
+    // Resize image to target_org_hw (using Canvas API for maximum performance)
+    return canvasBilinearResize(imageData, targetOrgHW[0], targetOrgHW[1]);
   }
 
-  /**
-   * Add padding to ensure image dimensions are compatible with pixel size (matching Python)
-   */
-  private addPadding(imageData: PixelImageData, pixelSize: number): PixelImageData {
-    const { width: w, height: h } = imageData;
-    
-    const padH = pixelSize - (h % pixelSize);
-    const padW = pixelSize - (w % pixelSize);
-    
-    // No padding needed if already divisible
-    if (padH === pixelSize && padW === pixelSize) {
-      return imageData;
-    }
-    
-    // Calculate padding distribution (matching Python pad behavior)
-    const padTop = Math.floor(padH / 2);
-    const padBottom = padH - padTop;
-    const padLeft = Math.floor(padW / 2);
-    const padRight = padW - padLeft;
-    
-    const paddedWidth = w + padLeft + padRight;
-    const paddedHeight = h + padTop + padBottom;
-    
-    const paddedImage = new PixelImageData(paddedWidth, paddedHeight);
-    
-    // Fill with replicated edge pixels (matching Python "replicate" mode)
-    for (let y = 0; y < paddedHeight; y++) {
-      for (let x = 0; x < paddedWidth; x++) {
-        let srcX = x - padLeft;
-        let srcY = y - padTop;
-        
-        // Clamp to edge pixels for padding
-        srcX = Math.max(0, Math.min(srcX, w - 1));
-        srcY = Math.max(0, Math.min(srcY, h - 1));
-        
-        const pixel = imageData.getPixel(srcX, srcY);
-        paddedImage.setPixel(x, y, pixel);
-      }
-    }
-    
-    return paddedImage;
-  }
 
   /**
    * Main pixelize processing function
@@ -342,13 +301,13 @@ export class PixelOE {
           const ratio = imageData.width / imageData.height;
           const targetHeight = Math.floor(Math.sqrt(targetSize * targetSize / ratio));
           const targetWidth = Math.floor(targetHeight * ratio);
-          result = this.resizeNearest(result, targetWidth, targetHeight);
+          result = canvasNearestResize(result, targetWidth, targetHeight);
           break;
         case 'bilinear':
           const ratioB = imageData.width / imageData.height;
           const targetHeightB = Math.floor(Math.sqrt(targetSize * targetSize / ratioB));
           const targetWidthB = Math.floor(targetHeightB * ratioB);
-          result = this.resizeBilinear(result, targetWidthB, targetHeightB);
+          result = canvasBilinearResize(result, targetWidthB, targetHeightB);
           break;
         case 'lanczos':
           const ratioL = imageData.width / imageData.height;
