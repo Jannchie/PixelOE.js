@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import type { PixelImageData, PixelOEOptions } from '../index'
+import Button from 'primevue/button'
+import FileUpload from 'primevue/fileupload'
+import InputSwitch from 'primevue/inputswitch'
+import ProgressSpinner from 'primevue/progressspinner'
+import Slider from 'primevue/slider'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { PixelOE } from '../index'
 
 // Reactive state
 const fileInput = ref<HTMLInputElement>()
-const fileInputMain = ref<HTMLInputElement>()
 const originalCanvas = ref<HTMLCanvasElement>()
 const resultCanvas = ref<HTMLCanvasElement>()
 
@@ -16,46 +20,17 @@ const showSettings = ref(false)
 const showingOriginal = ref(false)
 
 const options = reactive<PixelOEOptions>({
-  pixelSize: 8, // patch_size: 更大的默认像素大小
-  thickness: 2, // thickness: 回到 legacy 行为
-  targetSize: 256, // target_size: 目标尺寸 (matching demo)
-  mode: 'contrast', // 最佳质量模式
+  pixelSize: 8,
+  thickness: 2,
+  targetSize: 256,
+  mode: 'contrast',
   colorMatching: true,
-  contrast: 1, // 默认对比度
-  saturation: 1, // 默认饱和度
+  contrast: 1,
+  saturation: 1,
   noUpscale: false,
   noDownscale: false,
-  kCentroids: 3, // 更好的聚类效果
+  kCentroids: 3,
 })
-
-// Simplified mode options
-const simpleModes = [
-  {
-    value: 'contrast',
-    label: 'Smart',
-    description: 'AI-powered intelligent selection',
-  },
-  {
-    value: 'center',
-    label: 'Center',
-    description: 'Simple center-based sampling',
-  },
-  {
-    value: 'k-centroid',
-    label: 'Cluster',
-    description: 'Color clustering algorithm',
-  },
-  {
-    value: 'nearest',
-    label: 'Fast',
-    description: 'Quick nearest neighbor',
-  },
-  {
-    value: 'bilinear',
-    label: 'Smooth',
-    description: 'Smooth interpolation',
-  },
-]
 
 // Create PixelOE instance
 let pixelOE: PixelOE
@@ -69,11 +44,10 @@ onMounted(() => {
   // Add paste event listener
   pasteHandler = (event: ClipboardEvent) => {
     const items = event.clipboardData?.items
-    if (!items) {
+    if (!items)
       return
-    }
 
-    for (const item of items) {
+    for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile()
         if (file) {
@@ -94,23 +68,19 @@ onUnmounted(() => {
 })
 
 // Event handlers
-async function handleFileSelect(event: Event) {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-
-  if (!file) {
+async function handleFileSelect(event: any) {
+  const files = event.files
+  if (!files || files.length === 0)
     return
-  }
 
   try {
-    originalImage.value = await pixelOE.loadImage(file)
+    originalImage.value = await pixelOE.loadImage(files[0])
     await nextTick()
     drawOriginalImage()
-    resultImage.value = null // Clear previous result
+    resultImage.value = null
   }
   catch (error) {
     console.error('Error loading image:', error)
-    alert('Failed to load image, please try again')
   }
 }
 
@@ -119,11 +89,42 @@ async function handlePastedImage(file: File) {
     originalImage.value = await pixelOE.loadImage(file)
     await nextTick()
     drawOriginalImage()
-    resultImage.value = null // Clear previous result
+    resultImage.value = null
   }
   catch (error) {
     console.error('Error loading pasted image:', error)
-    alert('Failed to load pasted image, please try again')
+  }
+}
+
+// Handle file input change
+function handleFileInputChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.files && input.files.length > 0) {
+    handlePastedImage(input.files[0])
+  }
+}
+
+// Drag and drop handlers
+function onDragOver(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function onDragLeave(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function onDrop(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+
+  const files = event.dataTransfer?.files
+  if (files && files.length > 0) {
+    const file = files[0]
+    if (file.type.startsWith('image/')) {
+      handlePastedImage(file)
+    }
   }
 }
 
@@ -132,17 +133,13 @@ function handleOptionsChange() {
 }
 
 async function processImage() {
-  if (!originalImage.value) {
+  if (!originalImage.value)
     return
-  }
 
   processing.value = true
 
   try {
-    // Use setTimeout to allow UI to update
     await new Promise(resolve => setTimeout(resolve, 100))
-
-    // Process in chunks to avoid blocking UI
     const result = await processImageAsync(originalImage.value)
     resultImage.value = result.result
 
@@ -151,14 +148,12 @@ async function processImage() {
   }
   catch (error) {
     console.error('Error processing image:', error)
-    alert(`Processing failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   finally {
     processing.value = false
   }
 }
 
-// Async wrapper to prevent UI blocking
 async function processImageAsync(imageData: PixelImageData): Promise<{ result: PixelImageData }> {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
@@ -174,9 +169,8 @@ async function processImageAsync(imageData: PixelImageData): Promise<{ result: P
 }
 
 async function downloadResult() {
-  if (!resultImage.value) {
+  if (!resultImage.value)
     return
-  }
 
   try {
     const blob = await pixelOE.exportBlob(resultImage.value, 'image/png')
@@ -193,19 +187,16 @@ async function downloadResult() {
   }
   catch (error) {
     console.error('Error downloading image:', error)
-    alert('Download failed, please try again')
   }
 }
 
 function drawOriginalImage() {
-  if (!originalCanvas.value || !originalImage.value) {
+  if (!originalCanvas.value || !originalImage.value)
     return
-  }
 
   const ctx = originalCanvas.value.getContext('2d')
-  if (!ctx) {
+  if (!ctx)
     return
-  }
 
   const imageData = originalImage.value.toCanvasImageData()
   ctx.clearRect(0, 0, originalCanvas.value.width, originalCanvas.value.height)
@@ -213,18 +204,16 @@ function drawOriginalImage() {
 }
 
 function drawResultImage() {
-  if (!resultCanvas.value || !resultImage.value) {
+  if (!resultCanvas.value || !resultImage.value)
     return
-  }
 
   const ctx = resultCanvas.value.getContext('2d')
-  if (!ctx) {
+  if (!ctx)
     return
-  }
 
   const imageData = resultImage.value.toCanvasImageData()
   ctx.clearRect(0, 0, resultCanvas.value.width, resultCanvas.value.height)
-  ctx.imageSmoothingEnabled = false // Disable smoothing for pixel art
+  ctx.imageSmoothingEnabled = false
   ctx.putImageData(imageData, 0, 0)
 }
 </script>
@@ -247,22 +236,16 @@ function drawResultImage() {
       <!-- Upload Area (only when image is loaded) -->
       <div v-if="originalImage" class="flex-shrink-0 py-4">
         <div class="relative">
-          <input
-            id="fileInput"
-            ref="fileInput"
-            type="file"
+          <FileUpload
+            mode="basic"
             accept="image/*"
-            class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            @change="handleFileSelect"
-          >
-          <div class="border-2 border-gray-300 rounded-2xl border-dashed bg-gray-50 p-4 text-center transition-all hover:border-gray-400 hover:bg-gray-100">
-            <div class="flex items-center justify-center text-gray-600">
-              <div class="i-carbon-cloud-upload mr-2 h-5 w-5" />
-              <p class="font-medium">
-                Change Image
-              </p>
-            </div>
-          </div>
+            :max-file-size="10000000"
+            auto
+            choose-label="Change Image"
+            class="w-full"
+            @upload="handleFileSelect"
+            @select="handleFileSelect"
+          />
         </div>
       </div>
 
@@ -272,14 +255,18 @@ function drawResultImage() {
         <div v-if="!originalImage" class="h-full">
           <div class="relative h-full">
             <input
-              id="fileInputMain"
-              ref="fileInputMain"
+              ref="fileInput"
               type="file"
               accept="image/*"
-              class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              @change="handleFileSelect"
+              class="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+              @change="handleFileInputChange"
             >
-            <div class="h-full flex items-center justify-center border-2 border-gray-300 rounded-2xl border-dashed bg-gray-50 text-center transition-all hover:border-gray-400 hover:bg-gray-100">
+            <div
+              class="h-full flex cursor-pointer items-center justify-center border-2 border-gray-300 border-dashed bg-gray-50 text-center transition-all hover:border-gray-400 hover:bg-gray-100"
+              @dragover.prevent="onDragOver"
+              @dragleave.prevent="onDragLeave"
+              @drop.prevent="onDrop"
+            >
               <div class="text-gray-600">
                 <div class="i-carbon-cloud-upload mx-auto mb-4 h-16 w-16" />
                 <p class="mb-2 text-lg font-semibold">
@@ -289,7 +276,7 @@ function drawResultImage() {
                   PNG, JPG, WEBP
                 </p>
                 <p class="text-xs text-gray-400">
-                  or paste image from clipboard
+                  Or paste image from clipboard
                 </p>
               </div>
             </div>
@@ -305,17 +292,17 @@ function drawResultImage() {
                 {{ showingOriginal ? 'Original' : (resultImage ? 'Pixel Art' : 'Ready') }}
               </h4>
               <p class="mt-1 text-xs text-gray-500">
-                {{ resultImage ? 'Hold to view original' : 'Generate to see result' }}
+                {{ resultImage ? 'Hold to view original comparison' : 'Click Generate to see effect' }}
               </p>
             </div>
 
-            <div class="relative flex flex-1 items-center justify-center overflow-hidden border border-gray-200 rounded-xl bg-gray-50">
+            <div class="relative flex flex-1 items-center justify-center overflow-hidden border border-gray-200 bg-gray-50">
               <!-- Original Canvas (always present when image loaded) -->
               <canvas
                 ref="originalCanvas"
                 :width="originalImage?.width || 0"
                 :height="originalImage?.height || 0"
-                class="h-full w-full rounded object-contain transition-opacity duration-200"
+                class="h-full w-full object-contain transition-opacity duration-200"
                 :class="{ 'opacity-100': showingOriginal || !resultImage, 'opacity-0': !showingOriginal && resultImage }"
               />
 
@@ -325,7 +312,7 @@ function drawResultImage() {
                 ref="resultCanvas"
                 :width="resultImage.width"
                 :height="resultImage.height"
-                class="pixel-art absolute inset-0 h-full w-full rounded object-contain transition-opacity duration-200"
+                class="pixel-art absolute inset-0 h-full w-full object-contain transition-opacity duration-200"
                 :class="{ 'opacity-0': showingOriginal, 'opacity-100': !showingOriginal }"
                 @mousedown="showingOriginal = true"
                 @mouseup="showingOriginal = false"
@@ -338,19 +325,9 @@ function drawResultImage() {
               <!-- Processing State -->
               <div v-if="processing" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90">
                 <div class="text-center text-gray-600">
-                  <div class="i-carbon-loading mx-auto mb-2 h-8 w-8 animate-spin" />
+                  <ProgressSpinner style="width: 32px; height: 32px" stroke-width="4" class="mb-2" />
                   <p class="text-xs">
                     Processing...
-                  </p>
-                </div>
-              </div>
-
-              <!-- Ready State -->
-              <div v-if="!resultImage && !processing" class="absolute inset-0 flex items-center justify-center">
-                <div class="text-center text-gray-400">
-                  <div class="i-carbon-magic-wand mx-auto mb-2 h-8 w-8" />
-                  <p class="text-xs">
-                    Ready
                   </p>
                 </div>
               </div>
@@ -362,35 +339,26 @@ function drawResultImage() {
       <!-- Bottom Actions -->
       <div v-if="originalImage" class="flex-shrink-0 border-t border-gray-100 bg-white py-4">
         <div class="flex space-x-3">
-          <button
+          <Button
             :disabled="processing"
-            class="flex-1 transform rounded-xl bg-black py-3 text-white font-semibold transition-all active:scale-95 disabled:scale-100 disabled:opacity-50"
+            :loading="processing"
+            label="Generate"
+            class="flex-1"
             @click="processImage"
-          >
-            <div v-if="processing" class="flex items-center justify-center">
-              <div class="i-carbon-loading mr-2 h-4 w-4 animate-spin" />
-              Processing
-            </div>
-            <div v-else class="flex items-center justify-center">
-              <div class="i-carbon-magic-wand mr-2 h-4 w-4" />
-              Generate
-            </div>
-          </button>
+          />
 
-          <button
-            class="rounded-xl bg-gray-100 px-4 text-gray-700 transition-all active:scale-95 hover:bg-gray-200"
+          <Button
             @click="showSettings = true"
           >
             <div class="i-carbon-settings h-5 w-5" />
-          </button>
+          </Button>
 
-          <button
+          <Button
             v-if="resultImage"
-            class="rounded-xl bg-gray-800 px-4 text-white transition-all active:scale-95 hover:bg-gray-900"
             @click="downloadResult"
           >
             <div class="i-carbon-download h-5 w-5" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -402,142 +370,97 @@ function drawResultImage() {
           <h3 class="text-lg text-gray-900 font-semibold">
             Settings
           </h3>
-          <button class="text-gray-400 hover:text-gray-600" @click="showSettings = false">
+          <Button
+            text
+            severity="secondary"
+            @click="showSettings = false"
+          >
             <div class="i-carbon-close h-6 w-6" />
-          </button>
+          </Button>
         </div>
 
         <div class="flex-1 overflow-y-auto p-6">
           <div class="space-y-6">
-            <!-- Processing Mode -->
-            <div>
-              <label class="mb-3 block text-sm text-gray-700 font-medium">Processing Mode</label>
-              <div class="grid grid-cols-1 gap-2">
-                <label
-                  v-for="mode in simpleModes" :key="mode.value"
-                  class="flex cursor-pointer items-center border rounded-lg p-3 transition-all"
-                  :class="options.mode === mode.value
-                    ? 'bg-black text-white border-black'
-                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'"
-                >
-                  <input
-                    v-model="options.mode"
-                    type="radio"
-                    :value="mode.value"
-                    class="sr-only"
-                    @change="handleOptionsChange"
-                  >
-                  <div class="flex-1">
-                    <div class="font-medium">{{ mode.label }}</div>
-                    <div class="text-sm opacity-80">{{ mode.description }}</div>
-                  </div>
-                  <div v-if="options.mode === mode.value" class="i-carbon-checkmark h-5 w-5" />
-                </label>
-              </div>
-            </div>
-
             <!-- Sliders -->
             <div class="space-y-4">
-              <!-- Pixel Size (Patch Size) -->
+              <!-- Pixel Size -->
               <div>
                 <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Pixel Size (Patch)</label>
-                  <span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.pixelSize }}</span>
+                  <label class="text-sm text-gray-700 font-medium">Pixel Size</label>
+                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.pixelSize }}</span>
                 </div>
-                <input
-                  v-model.number="options.pixelSize"
-                  type="range"
-                  min="2"
-                  max="16"
-                  step="1"
-                  class="range-gray h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-                  @input="handleOptionsChange"
-                >
+                <Slider
+                  v-model="options.pixelSize"
+                  :min="2"
+                  :max="16"
+                  :step="1"
+                  class="w-full"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
 
               <!-- Target Size -->
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Target Size</label>
-                  <span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.targetSize }}</span>
+                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.targetSize }}</span>
                 </div>
-                <input
-                  v-model.number="options.targetSize"
-                  type="range"
-                  min="64"
-                  max="512"
-                  step="16"
-                  class="range-gray h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-                  @input="handleOptionsChange"
-                >
+                <Slider
+                  v-model="options.targetSize"
+                  :min="64"
+                  :max="512"
+                  :step="16"
+                  class="w-full"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
 
-              <!-- Thickness (Outline) -->
+              <!-- Thickness -->
               <div>
                 <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Thickness (Outline)</label>
-                  <span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.thickness }}</span>
+                  <label class="text-sm text-gray-700 font-medium">Outline Thickness</label>
+                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.thickness }}</span>
                 </div>
-                <input
-                  v-model.number="options.thickness"
-                  type="range"
-                  min="0"
-                  max="5"
-                  step="1"
-                  class="range-gray h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-                  @input="handleOptionsChange"
-                >
+                <Slider
+                  v-model="options.thickness"
+                  :min="0"
+                  :max="10"
+                  :step="1"
+                  class="w-full"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
 
               <!-- Contrast -->
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Contrast</label>
-                  <span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.contrast.toFixed(1) }}</span>
+                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.contrast.toFixed(1) }}</span>
                 </div>
-                <input
-                  v-model.number="options.contrast"
-                  type="range"
-                  min="0.5"
-                  max="2.0"
-                  step="0.1"
-                  class="range-gray h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-                  @input="handleOptionsChange"
-                >
+                <Slider
+                  v-model="options.contrast"
+                  :min="0.5"
+                  :max="2.0"
+                  :step="0.1"
+                  class="w-full"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
 
               <!-- Saturation -->
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Saturation</label>
-                  <span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.saturation.toFixed(1) }}</span>
+                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.saturation.toFixed(1) }}</span>
                 </div>
-                <input
-                  v-model.number="options.saturation"
-                  type="range"
-                  min="0.5"
-                  max="2.0"
-                  step="0.1"
-                  class="range-gray h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-                  @input="handleOptionsChange"
-                >
-              </div>
-
-              <!-- K-Centroids -->
-              <div v-if="options.mode === 'k-centroid'">
-                <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Clusters</label>
-                  <span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.kCentroids }}</span>
-                </div>
-                <input
-                  v-model.number="options.kCentroids"
-                  type="range"
-                  min="2"
-                  max="8"
-                  step="1"
-                  class="range-gray h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-                  @input="handleOptionsChange"
-                >
+                <Slider
+                  v-model="options.saturation"
+                  :min="0.5"
+                  :max="2.0"
+                  :step="0.1"
+                  class="w-full"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
             </div>
 
@@ -546,61 +469,43 @@ function drawResultImage() {
               <!-- Color Matching -->
               <div class="flex items-center justify-between">
                 <div>
-                  <label class="text-sm text-gray-700 font-medium">Color Matching</label>
-                  <p class="text-xs text-gray-500">
+                  <label class="block text-sm text-gray-700 font-medium">Color Matching</label>
+                  <p class="mt-1 text-xs text-gray-500">
                     Optimize color palette selection
                   </p>
                 </div>
-                <button
-                  class="relative h-6 w-11 inline-flex items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                  :class="options.colorMatching ? 'bg-gray-800' : 'bg-gray-200'"
-                  @click="options.colorMatching = !options.colorMatching; handleOptionsChange()"
-                >
-                  <span
-                    class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-                    :class="options.colorMatching ? 'translate-x-6' : 'translate-x-1'"
-                  />
-                </button>
+                <InputSwitch
+                  v-model="options.colorMatching"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
 
               <!-- No Upscale -->
               <div class="flex items-center justify-between">
                 <div>
-                  <label class="text-sm text-gray-700 font-medium">No Upscale</label>
-                  <p class="text-xs text-gray-500">
+                  <label class="block text-sm text-gray-700 font-medium">Disable Upscale</label>
+                  <p class="mt-1 text-xs text-gray-500">
                     Prevent image upscaling
                   </p>
                 </div>
-                <button
-                  class="relative h-6 w-11 inline-flex items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                  :class="options.noUpscale ? 'bg-gray-800' : 'bg-gray-200'"
-                  @click="options.noUpscale = !options.noUpscale; handleOptionsChange()"
-                >
-                  <span
-                    class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-                    :class="options.noUpscale ? 'translate-x-6' : 'translate-x-1'"
-                  />
-                </button>
+                <InputSwitch
+                  v-model="options.noUpscale"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
 
               <!-- No Downscale -->
               <div class="flex items-center justify-between">
                 <div>
-                  <label class="text-sm text-gray-700 font-medium">No Downscale</label>
-                  <p class="text-xs text-gray-500">
+                  <label class="block text-sm text-gray-700 font-medium">Disable Downscale</label>
+                  <p class="mt-1 text-xs text-gray-500">
                     Prevent image downscaling
                   </p>
                 </div>
-                <button
-                  class="relative h-6 w-11 inline-flex items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                  :class="options.noDownscale ? 'bg-gray-800' : 'bg-gray-200'"
-                  @click="options.noDownscale = !options.noDownscale; handleOptionsChange()"
-                >
-                  <span
-                    class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-                    :class="options.noDownscale ? 'translate-x-6' : 'translate-x-1'"
-                  />
-                </button>
+                <InputSwitch
+                  v-model="options.noDownscale"
+                  @update:model-value="handleOptionsChange"
+                />
               </div>
             </div>
           </div>
@@ -611,126 +516,19 @@ function drawResultImage() {
 </template>
 
 <style scoped>
-/* Custom range slider styles */
-.range-blue::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
-}
-
-.range-purple::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
-}
-
-.range-green::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #10b981, #059669);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
-}
-
-.range-orange::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #f97316, #ea580c);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.3);
-}
-
-.range-pink::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ec4899, #db2777);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(236, 72, 153, 0.3);
-}
-
-.range-gray::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #374151, #1f2937);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 2px 6px rgba(55, 65, 81, 0.3);
-}
-
-/* Firefox */
-.range-blue::-moz-range-thumb,
-.range-purple::-moz-range-thumb,
-.range-green::-moz-range-thumb,
-.range-orange::-moz-range-thumb,
-.range-pink::-moz-range-thumb,
-.range-gray::-moz-range-thumb {
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid white;
-}
-
-.range-blue::-moz-range-thumb {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-}
-
-.range-purple::-moz-range-thumb {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-}
-
-.range-green::-moz-range-thumb {
-  background: linear-gradient(135deg, #10b981, #059669);
-}
-
-.range-orange::-moz-range-thumb {
-  background: linear-gradient(135deg, #f97316, #ea580c);
-}
-
-.range-pink::-moz-range-thumb {
-  background: linear-gradient(135deg, #ec4899, #db2777);
-}
-
-.range-gray::-moz-range-thumb {
-  background: linear-gradient(135deg, #374151, #1f2937);
-}
-
-/* Pixel art canvas style */
 .pixel-art {
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
 }
 
-/* Touch-friendly hover states */
-@media (hover: hover) {
-  .hover\:bg-gray-50:hover {
-    background-color: #f9fafb;
-  }
-
-  .hover\:bg-gray-100:hover {
-    background-color: #f3f4f6;
-  }
+.bg-checkered {
+  background-image:
+    linear-gradient(45deg, #f8f9fa 25%, transparent 25%),
+    linear-gradient(-45deg, #f8f9fa 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f8f9fa 75%),
+    linear-gradient(-45deg, transparent 75%, #f8f9fa 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
 }
 </style>

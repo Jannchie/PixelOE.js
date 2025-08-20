@@ -212,7 +212,7 @@ export function applyDithering(
 
       for (let y = 0; y < imageData.height; y++) {
         for (let x = 0; x < imageData.width; x++) {
-          const [r,g,b,a] = imageData.getPixel(x, y)
+          const [r, g, b, a] = imageData.getPixel(x, y)
           const quantizedColor = findNearestPaletteColor([r, g, b], palette)
           result.setPixel(x, y, [quantizedColor[0], quantizedColor[1], quantizedColor[2], a])
         }
@@ -266,10 +266,7 @@ export function parallelErrorDiffusion(
           const ny = y + ky
 
           if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const [nr,
-ng,
-nb,
-na] = result.getPixel(nx, ny)
+            const [nr, ng, nb, na] = result.getPixel(nx, ny)
 
             const newR = clamp(nr + errorR * weight, 0, 255)
             const newG = clamp(ng + errorG * weight, 0, 255)

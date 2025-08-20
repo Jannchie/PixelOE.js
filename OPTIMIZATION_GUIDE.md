@@ -35,10 +35,10 @@ src/
 const pixelOE = new PixelOE({
   pixelSize: 6,
   thickness: 2,
-  mode: 'contrast'
-});
+  mode: 'contrast',
+})
 
-const result = pixelOE.pixelize(imageData);
+const result = pixelOE.pixelize(imageData)
 ```
 
 ### ⚡ **Enable Additional Optimizations**
@@ -49,12 +49,12 @@ const pixelOE = new PixelOE({
   pixelSize: 6,
   thickness: 2,
   mode: 'contrast',
-  
+
   // NEW: Performance optimization flags (all optional)
-  enableCPUOptimizations: true,    // Default: true
-  enableFastMode: true,            // Default: false - for very large images
-  maxImageSize: 2000000           // Default: 2M pixels - preprocessing threshold
-});
+  enableCPUOptimizations: true, // Default: true
+  enableFastMode: true, // Default: false - for very large images
+  maxImageSize: 2_000_000, // Default: 2M pixels - preprocessing threshold
+})
 ```
 
 ## Performance Benefits by Use Case
@@ -67,7 +67,7 @@ const pixelOE = new PixelOE({
 
 ### 🖼️ **Medium Images (128x128 - 512x512)**
 
-- **Speedup**: 1.8-3x  
+- **Speedup**: 1.8-3x
 - **Optimizations**: All CPU optimizations, fast morphology
 - **Recommendation**: Enable `enableCPUOptimizations: true` (default)
 
@@ -90,20 +90,20 @@ const pixelOE = new PixelOE({
 ```typescript
 interface PixelOEOptions {
   // ... existing options (unchanged) ...
-  
+
   // NEW: Performance optimization flags
-  enableCPUOptimizations?: boolean;  // Enable CPU-optimized algorithms
-  enableFastMode?: boolean;          // Fast mode for large images  
-  maxImageSize?: number;             // Preprocessing threshold (pixels)
+  enableCPUOptimizations?: boolean // Enable CPU-optimized algorithms
+  enableFastMode?: boolean // Fast mode for large images
+  maxImageSize?: number // Preprocessing threshold (pixels)
 }
 ```
 
 ### 📊 **Performance Monitoring**
 
 ```typescript
-import { getCPUOptimization } from 'pixeloe';
+import { getCPUOptimization } from 'pixeloe'
 
-const cpuOpt = getCPUOptimization();
+const cpuOpt = getCPUOptimization()
 // Access to internal optimization utilities if needed
 ```
 
@@ -126,8 +126,8 @@ const fastPixelOE = new PixelOE({
   mode: 'contrast',
   enableCPUOptimizations: true,
   enableFastMode: true,
-  maxImageSize: 1500000
-});
+  maxImageSize: 1_500_000,
+})
 ```
 
 ### 🎯 **For Batch Processing**
@@ -137,23 +137,23 @@ const fastPixelOE = new PixelOE({
 const batchPixelOE = new PixelOE({
   enableCPUOptimizations: true,
   // Process multiple images without recreating instance
-});
+})
 
 // Cache benefits accumulate across multiple images
-images.forEach(img => {
-  const result = batchPixelOE.pixelize(img);
+for (const img of images) {
+  const result = batchPixelOE.pixelize(img)
   // ... process result
-});
+}
 ```
 
 ### 🎯 **For Memory-Constrained Environments**
 
 ```typescript
 const memoryEfficientPixelOE = new PixelOE({
-  maxImageSize: 1000000,  // Lower threshold
-  enableFastMode: true,   // Faster preprocessing
-  enableCPUOptimizations: true
-});
+  maxImageSize: 1_000_000, // Lower threshold
+  enableFastMode: true, // Faster preprocessing
+  enableCPUOptimizations: true,
+})
 ```
 
 ## Performance Expectations
@@ -173,7 +173,7 @@ const memoryEfficientPixelOE = new PixelOE({
 ### 🧠 **Optimization Techniques Applied**
 
 1. **Adaptive Color Caching**: Smart RGB↔LAB conversion cache
-2. **Separable Kernels**: Morphological operations split into 1D passes  
+2. **Separable Kernels**: Morphological operations split into 1D passes
 3. **Fast Interpolation**: Optimized bilinear and nearest-neighbor algorithms
 4. **Integer Scaling**: Direct pixel replication for integer scale factors
 5. **Smart Preprocessing**: Automatic large image handling
@@ -195,7 +195,7 @@ const memoryEfficientPixelOE = new PixelOE({
 const pixelOE = new PixelOE({
   enableCPUOptimizations: false,
   // ... other options
-});
+})
 ```
 
 ### 🐛 **For Very Large Images**
@@ -204,17 +204,18 @@ const pixelOE = new PixelOE({
 // Enable fast mode and lower preprocessing threshold
 const pixelOE = new PixelOE({
   enableFastMode: true,
-  maxImageSize: 1000000,  // Process at lower resolution first
-  // ... other options  
-});
+  maxImageSize: 1_000_000, // Process at lower resolution first
+  // ... other options
+})
 ```
 
 ### 🐛 **Memory Issues**
 
 ```typescript
 // Clear CPU cache manually if needed
-import { getCPUOptimization } from 'pixeloe';
-getCPUOptimization().clearColorCache();
+import { getCPUOptimization } from 'pixeloe'
+
+getCPUOptimization().clearColorCache()
 ```
 
 ## Rollback Plan
@@ -232,7 +233,7 @@ mv src/pixeloe-original-backup.ts src/pixeloe.ts
 The optimized algorithm maintains full compatibility with:
 
 - All existing PixelOE options and modes
-- All image input/output formats  
+- All image input/output formats
 - All processing pipelines and workflows
 - All TypeScript types and interfaces
 

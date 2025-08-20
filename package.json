@@ -13,10 +13,13 @@
     "lint": "eslint . --fix"
   },
   "dependencies": {
+    "@primevue/themes": "^4.3.7",
     "pica": "^9.0.1",
+    "primevue": "^4.3.7",
     "vue": "^3.5.18"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^5.2.1",
     "@iconify-json/carbon": "^1.2.13",
     "@jannchie/eslint-config": "^3.7.0",
     "@types/pica": "^9.0.5",

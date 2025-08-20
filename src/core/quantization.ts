@@ -252,9 +252,7 @@ export function colorQuantizationKMeans(
   const pixels: number[][] = []
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r,
-g,
-b] = imageData.getPixel(x, y)
+      const [r, g, b] = imageData.getPixel(x, y)
       pixels.push([r, g, b])
     }
   }
@@ -279,7 +277,7 @@ b] = imageData.getPixel(x, y)
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r,g, b, a] = imageData.getPixel(x, y)
+      const [r, g, b, a] = imageData.getPixel(x, y)
       const nearestColor = findNearestPaletteColor([r, g, b], centroids)
       quantized.setPixel(x, y, [nearestColor[0], nearestColor[1], nearestColor[2], a])
       labels.push(findNearestCentroid([r, g, b], centroids))
@@ -322,10 +320,7 @@ function orderedDitherInternal(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r,
-g,
-b,
-a] = imageData.getPixel(x, y)
+      const [r, g, b, a] = imageData.getPixel(x, y)
       const threshold = bayerMatrix[y % patternSize][x % patternSize]
 
       // Find two nearest colors and their distance ratio
@@ -361,10 +356,7 @@ function errorDiffusionDitherInternal(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r,
-g,
-b,
-a] = result.getPixel(x, y)
+      const [r, g, b, a] = result.getPixel(x, y)
 
       // Find nearest palette color
       const quantizedColor = findNearestPaletteColor([r, g, b], palette)
@@ -384,10 +376,7 @@ a] = result.getPixel(x, y)
 
         // Check bounds
         if (nx >= 0 && nx < imageData.width && ny >= 0 && ny < imageData.height) {
-          const [nr,
-ng,
-nb,
-na] = result.getPixel(nx, ny)
+          const [nr, ng, nb, na] = result.getPixel(nx, ny)
 
           // Add weighted error
           const newR = clamp(nr + errorR * weight, 0, 255)
@@ -521,10 +510,7 @@ export function quantizeAndDither(
 
     for (let y = 0; y < imageData.height; y++) {
       for (let x = 0; x < imageData.width; x++) {
-        const [r,
-g,
-b,
-a] = imageData.getPixel(x, y)
+        const [r, g, b, a] = imageData.getPixel(x, y)
         const quantizedColor = findNearestPaletteColor([r, g, b], centroids)
         result.setPixel(x, y, [
           Math.round(clamp(quantizedColor[0], 0, 255)),

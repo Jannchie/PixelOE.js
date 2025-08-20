@@ -87,7 +87,7 @@ console.log(`New optimization options: ${newOptionsFound}/${newOptions.length} a
 
 // Final recommendation
 const passRate = (featuresFound + interfacesFound + newOptionsFound)
-                  / (optimizationFeatures.length + requiredInterfaces.length + newOptions.length)
+  / (optimizationFeatures.length + requiredInterfaces.length + newOptions.length)
 
 console.log('\n🎯 FINAL VERDICT')
 console.log('================')

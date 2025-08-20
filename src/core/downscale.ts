@@ -290,8 +290,8 @@ function kMeansCluster(pixels: Array<[number, number, number]>, k: number = 2, m
       for (let c = 0; c < k; c++) {
         const distance
           = (pixel[0] - centroids[c][0]) ** 2
-          + (pixel[1] - centroids[c][1]) ** 2
-          + (pixel[2] - centroids[c][2]) ** 2
+            + (pixel[1] - centroids[c][1]) ** 2
+            + (pixel[2] - centroids[c][2]) ** 2
 
         if (distance < bestDistance) {
           bestDistance = distance
@@ -317,8 +317,8 @@ function kMeansCluster(pixels: Array<[number, number, number]>, k: number = 2, m
 
       const distance
         = (newCentroid[0] - centroids[c][0]) ** 2
-        + (newCentroid[1] - centroids[c][1]) ** 2
-        + (newCentroid[2] - centroids[c][2]) ** 2
+          + (newCentroid[1] - centroids[c][1]) ** 2
+          + (newCentroid[2] - centroids[c][2]) ** 2
 
       if (distance > 1) { // 1 pixel difference threshold
         converged = false
@@ -345,8 +345,8 @@ function kMeansCluster(pixels: Array<[number, number, number]>, k: number = 2, m
       for (const [c, centroid] of centroids.entries()) {
         const distance
           = (pixel[0] - centroid[0]) ** 2
-          + (pixel[1] - centroid[1]) ** 2
-          + (pixel[2] - centroid[2]) ** 2
+            + (pixel[1] - centroid[1]) ** 2
+            + (pixel[2] - centroid[2]) ** 2
 
         if (distance < bestDistance) {
           bestDistance = distance
@@ -418,8 +418,8 @@ export function kCentroidDownscale(imageData: PixelImageData, targetSize: number
         for (const centroid of centroids) {
           const distance
             = (centerR - centroid[0]) ** 2
-            + (centerG - centroid[1]) ** 2
-            + (centerB - centroid[2]) ** 2
+              + (centerG - centroid[1]) ** 2
+              + (centerB - centroid[2]) ** 2
 
           if (distance < bestDistance) {
             bestDistance = distance
