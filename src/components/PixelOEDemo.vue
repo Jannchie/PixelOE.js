@@ -371,6 +371,7 @@ const processing = ref(false)
 const showSettings = ref(false)
 const showingOriginal = ref(false)
 
+
 const options = reactive<PixelOEOptions>({
   pixelSize: 8,      // patch_size: 更大的默认像素大小
   thickness: 2,      // thickness: 适中的轮廓

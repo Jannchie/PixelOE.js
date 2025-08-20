@@ -95,31 +95,6 @@ function calculateMeanStd(pixels: [number, number, number][]) {
   };
 }
 
-/**
- * Calculate color statistics for an image (legacy function)
- */
-function calculateColorStats(imageData: PixelImageData) {
-  const lValues: number[] = [];
-  const aValues: number[] = [];
-  const bValues: number[] = [];
-  
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b] = imageData.getPixel(x, y);
-      const [l, a, bLab] = rgbToLab(r, g, b);
-      
-      lValues.push(l);
-      aValues.push(a);
-      bValues.push(bLab);
-    }
-  }
-  
-  return {
-    l: { mean: mean(lValues), std: standardDeviation(lValues) },
-    a: { mean: mean(aValues), std: standardDeviation(aValues) },
-    b: { mean: mean(bValues), std: standardDeviation(bValues) }
-  };
-}
 
 /**
  * Improved wavelet color correction matching Python implementation exactly
@@ -205,7 +180,6 @@ function waveletDecomposition(channel: Float32Array, width: number, height: numb
  * Simple Gaussian blur matching Python cv2.GaussianBlur behavior  
  */
 function simpleGaussianBlur(channel: Float32Array, width: number, height: number, radius: number): Float32Array {
-  const kernelSize = 2 * radius + 1;
   const result = new Float32Array(channel.length);
   
   // Simple box blur approximation (much simpler than full Gaussian)

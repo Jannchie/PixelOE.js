@@ -54,31 +54,6 @@ function selectPixelLuminanceByContrast(luminances: number[]): number {
   return selectedValue;
 }
 
-/**
- * Get color patch data from image
- */
-function getColorPatch(imageData: PixelImageData, startX: number, startY: number, patchSize: number): {
-  luminancePatch: Array<[number, number, number]>,
-  aPatch: number[],
-  bPatch: number[]
-} {
-  const luminancePatch: Array<[number, number, number]> = [];
-  const aPatch: number[] = [];
-  const bPatch: number[] = [];
-  
-  for (let y = startY; y < startY + patchSize && y < imageData.height; y++) {
-    for (let x = startX; x < startX + patchSize && x < imageData.width; x++) {
-      const [r, g, b] = imageData.getPixel(x, y);
-      const [, a, bLab] = rgbToLab(r, g, b);
-      
-      luminancePatch.push([r, g, b]);
-      aPatch.push(a);
-      bPatch.push(bLab);
-    }
-  }
-  
-  return { luminancePatch, aPatch, bPatch };
-}
 
 /**
  * Contrast-based downscaling algorithm (updated to match Python implementation exactly)
