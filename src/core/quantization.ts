@@ -325,13 +325,24 @@ function orderedDitherInternal(
       const [r, g, b, a] = imageData.getPixel(x, y)
       const threshold = bayerMatrix[y % patternSize][x % patternSize]
 
-      // Find two nearest colors and their distance ratio
-      const { color1, color2, distRatio } = findNearestPaletteColorsWithDistanceInternal([r, g, b], palette)
-
-      // Choose between color1 and color2 based on threshold
-      let finalColor: number[]
-      finalColor = threshold > distRatio ? color1 : color2
-
+      // Find nearest palette color
+      const nearestColor = findNearestPaletteColor([r, g, b], palette)
+      
+      // Calculate luminance-based dithering
+      const originalLum = 0.299 * r + 0.587 * g + 0.114 * b
+      const quantizedLum = 0.299 * nearestColor[0] + 0.587 * nearestColor[1] + 0.114 * nearestColor[2]
+      
+      // Apply dithering noise based on threshold and luminance difference
+      const error = originalLum - quantizedLum
+      const noise = (threshold - 0.5) * 64 // Scale threshold to noise range
+      
+      // Add noise to original color before requantizing
+      const ditheredR = Math.round(Math.max(0, Math.min(255, r + error * 0.3 + noise)))
+      const ditheredG = Math.round(Math.max(0, Math.min(255, g + error * 0.3 + noise)))
+      const ditheredB = Math.round(Math.max(0, Math.min(255, b + error * 0.3 + noise)))
+      
+      // Final quantization with dithered color
+      const finalColor = findNearestPaletteColor([ditheredR, ditheredG, ditheredB], palette)
       result.setPixel(x, y, [finalColor[0], finalColor[1], finalColor[2], a])
     }
   }
@@ -395,7 +406,7 @@ function errorDiffusionDitherInternal(
 }
 
 /**
- * Generate simple Bayer matrix
+ * Generate proper Bayer matrix using recursive construction
  */
 function generateBayerMatrixInternal(n: number): number[][] {
   if (n === 2) {
@@ -412,77 +423,63 @@ function generateBayerMatrixInternal(n: number): number[][] {
       [15 / 16, 7 / 16, 13 / 16, 5 / 16],
     ]
   }
+  else if (n === 8) {
+    // Proper 8x8 Bayer matrix
+    return [
+      [0, 32, 8, 40, 2, 34, 10, 42],
+      [48, 16, 56, 24, 50, 18, 58, 26],
+      [12, 44, 4, 36, 14, 46, 6, 38],
+      [60, 28, 52, 20, 62, 30, 54, 22],
+      [3, 35, 11, 43, 1, 33, 9, 41],
+      [51, 19, 59, 27, 49, 17, 57, 25],
+      [15, 47, 7, 39, 13, 45, 5, 37],
+      [63, 31, 55, 23, 61, 29, 53, 21]
+    ].map(row => row.map(val => val / 64))
+  }
   else {
-    // For n=8 or larger, use a simplified pattern
-    const matrix: number[][] = []
-    for (let y = 0; y < n; y++) {
-      matrix[y] = []
-      for (let x = 0; x < n; x++) {
-        matrix[y][x] = ((x + y * n) % (n * n)) / (n * n)
-      }
-    }
-    return matrix
+    // For other sizes, use recursive Bayer matrix construction
+    return generateRecursiveBayerMatrix(n)
   }
 }
 
 /**
- * Internal implementation of nearest colors with distance
+ * Generate Bayer matrix recursively for any power of 2 size
  */
-function findNearestPaletteColorsWithDistanceInternal(
-  pixel: number[],
-  palette: number[][],
-): {
-  color1: number[]
-  color2: number[]
-  distRatio: number
-} {
-  if (palette.length < 2) {
-    return {
-      color1: [...palette[0]],
-      color2: [...palette[0]],
-      distRatio: 0,
+function generateRecursiveBayerMatrix(n: number): number[][] {
+  // Find the nearest power of 2
+  let size = 2
+  while (size < n) size *= 2
+  
+  // Start with 2x2 base case
+  let matrix = [
+    [0, 2],
+    [3, 1]
+  ]
+  
+  // Recursively build larger matrices
+  while (matrix.length < size) {
+    const oldSize = matrix.length
+    const newSize = oldSize * 2
+    const newMatrix: number[][] = []
+    
+    for (let i = 0; i < newSize; i++) {
+      newMatrix[i] = []
+      for (let j = 0; j < newSize; j++) {
+        const quadrant = Math.floor(i / oldSize) * 2 + Math.floor(j / oldSize)
+        const baseValue = matrix[i % oldSize][j % oldSize]
+        const offset = quadrant * oldSize * oldSize
+        newMatrix[i][j] = baseValue + offset
+      }
     }
+    
+    matrix = newMatrix
   }
-
-  // Calculate distances to all palette colors
-  const distances = palette.map((color) => {
-    let distance = 0
-    for (const [c, element] of pixel.entries()) {
-      const diff = element - color[c]
-      distance += diff * diff
-    }
-    return Math.sqrt(distance)
-  })
-
-  // Find two closest colors
-  let firstIndex = 0
-  let secondIndex = 1
-
-  if (distances[1] < distances[0]) {
-    [firstIndex, secondIndex] = [secondIndex, firstIndex]
-  }
-
-  for (let i = 2; i < distances.length; i++) {
-    if (distances[i] < distances[firstIndex]) {
-      secondIndex = firstIndex
-      firstIndex = i
-    }
-    else if (distances[i] < distances[secondIndex]) {
-      secondIndex = i
-    }
-  }
-
-  const firstDist = distances[firstIndex]
-  const secondDist = distances[secondIndex]
-  const totalDist = firstDist + secondDist
-  const distRatio = totalDist > 0 ? firstDist / totalDist : 0
-
-  return {
-    color1: [...palette[firstIndex]],
-    color2: [...palette[secondIndex]],
-    distRatio,
-  }
+  
+  // Normalize to [0, 1] range
+  const maxValue = size * size - 1
+  return matrix.map(row => row.map(val => val / (maxValue + 1)))
 }
+
 
 /**
  * Apply quantization with predefined palette
