@@ -6,8 +6,9 @@ import { centerDownscale, contrastDownscale, kCentroidDownscale, nearestUpscale 
 import { PixelImageData } from './core/imageData'
 import { resizeImageSync } from './core/imageResize'
 import { outlineExpansion } from './core/outline'
-import { quantizeAndDither } from './core/quantization'
+import { quantizeAndDither, quantizeToPalette } from './core/quantization'
 import { applySharpen } from './core/sharpen'
+import type { ColorPalette } from './core/palettes'
 
 /**
  * PixelOE configuration options
@@ -33,6 +34,10 @@ export interface PixelOEOptions {
   quantMode?: 'kmeans' // Quantization algorithm (for future extensibility)
   noPostUpscale?: boolean // Skip final upscaling
   resampleMethod?: 'lanczos' | 'bicubic' | 'auto' // High-quality resampling method
+  
+  // Palette options
+  usePalette?: boolean // Use predefined color palette
+  selectedPalette?: ColorPalette // Selected color palette
 }
 
 /**
@@ -72,6 +77,10 @@ export class PixelOE {
       quantMode: 'kmeans',
       noPostUpscale: false,
       resampleMethod: 'auto',
+      
+      // Palette defaults
+      usePalette: false,
+      selectedPalette: undefined,
 
       ...options,
     }
@@ -333,21 +342,32 @@ export class PixelOE {
     const downscaleTime = performance.now() - downscaleStart
     console.log(`🔽 [PixelOE] Downscaling completed: ${downscaleTime.toFixed(1)}ms`)
 
-    // Step 5: Color quantization and dithering (simplified)
+    // Step 5: Color quantization and dithering (with palette support)
     const quantizationStart = performance.now()
     const preQuantResult = result // Store for second color matching
-    if (this.options.doQuantization) {
+    
+    if (this.options.usePalette && this.options.selectedPalette) {
+      // Use predefined palette
+      result = quantizeToPalette(
+        result,
+        this.options.selectedPalette,
+        this.options.ditherMethod || 'none',
+      )
+      console.log(`🎨 [PixelOE] Applied palette: ${this.options.selectedPalette.name} (${this.options.selectedPalette.colors.length} colors)`)
+    } else if (this.options.doQuantization) {
+      // Use K-means quantization
       result = quantizeAndDither(
         result,
         this.options.numColors || 32,
         this.options.ditherMethod || 'none',
       )
-
-      // Second color matching after quantization (key difference from original)
-      if (this.options.colorMatching) {
-        result = matchColorFast(result, preQuantResult)
-      }
     }
+
+    // Second color matching after quantization (key difference from original)
+    if ((this.options.usePalette || this.options.doQuantization) && this.options.colorMatching) {
+      result = matchColorFast(result, preQuantResult)
+    }
+    
     const quantizationTime = performance.now() - quantizationStart
     console.log(`🌈 [PixelOE] Color quantization: ${quantizationTime.toFixed(1)}ms`)
 

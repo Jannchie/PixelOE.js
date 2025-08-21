@@ -1,5 +1,7 @@
 import { clamp } from '../utils/math'
 import { PixelImageData } from './imageData'
+import type { ColorPalette } from './palettes'
+import { findNearestColorInPalette } from './palettes'
 
 /**
  * Color quantization utilities
@@ -479,6 +481,39 @@ function findNearestPaletteColorsWithDistanceInternal(
     color1: [...palette[firstIndex]],
     color2: [...palette[secondIndex]],
     distRatio,
+  }
+}
+
+/**
+ * Apply quantization with predefined palette
+ */
+export function quantizeToPalette(
+  imageData: PixelImageData,
+  palette: ColorPalette,
+  ditherMethod: 'none' | 'ordered' | 'error_diffusion' = 'none',
+): PixelImageData {
+  if (ditherMethod === 'none') {
+    // Simple quantization without dithering
+    const result = new PixelImageData(imageData.width, imageData.height)
+
+    for (let y = 0; y < imageData.height; y++) {
+      for (let x = 0; x < imageData.width; x++) {
+        const [r, g, b, a] = imageData.getPixel(x, y)
+        const quantizedColor = findNearestColorInPalette([r, g, b], palette.colors)
+        result.setPixel(x, y, [
+          Math.round(clamp(quantizedColor[0], 0, 255)),
+          Math.round(clamp(quantizedColor[1], 0, 255)),
+          Math.round(clamp(quantizedColor[2], 0, 255)),
+          a,
+        ])
+      }
+    }
+
+    return result
+  }
+  else {
+    // Apply dithering with predefined palette
+    return applyDitheringInternal(imageData, palette.colors, ditherMethod)
   }
 }
 

@@ -12,6 +12,7 @@ export * from './core/outline'
 // New Python-ported features
 export * from './core/quantization'
 export * from './core/sharpen'
+export * from './core/palettes'
 // Main exports
 export { PixelOE } from './pixeloe'
 export type { PixelOEOptions, PixelOEResult } from './pixeloe'

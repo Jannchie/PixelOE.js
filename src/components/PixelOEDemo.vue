@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PixelImageData, PixelOEOptions } from '../index'
+import type { ColorPalette } from '../core/palettes'
 import Button from 'primevue/button'
 import FileUpload from 'primevue/fileupload'
 import InputSwitch from 'primevue/inputswitch'
@@ -7,6 +8,7 @@ import ProgressSpinner from 'primevue/progressspinner'
 import Slider from 'primevue/slider'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { PixelOE } from '../index'
+import PaletteSelector from './PaletteSelector.vue'
 
 // Reactive state
 const fileInput = ref<HTMLInputElement>()
@@ -30,6 +32,11 @@ const options = reactive<PixelOEOptions>({
   noUpscale: false,
   noDownscale: false,
   kCentroids: 3,
+  
+  // Palette options
+  usePalette: false,
+  selectedPalette: undefined as ColorPalette | undefined,
+  ditherMethod: 'none' as 'none' | 'ordered' | 'error_diffusion',
 })
 
 // Create PixelOE instance
@@ -462,6 +469,19 @@ function drawResultImage() {
                   @update:model-value="handleOptionsChange"
                 />
               </div>
+            </div>
+
+            <!-- Palette Section -->
+            <div class="border-t border-gray-200 pt-4">
+              <h4 class="mb-4 text-sm text-gray-700 font-semibold">Color Palette</h4>
+              <PaletteSelector
+                v-model:use-palette="options.usePalette"
+                v-model:selected-palette="options.selectedPalette"
+                v-model:dither-method="options.ditherMethod"
+                @update:use-palette="handleOptionsChange"
+                @update:selected-palette="handleOptionsChange"
+                @update:dither-method="handleOptionsChange"
+              />
             </div>
 
             <!-- Toggle Options -->
