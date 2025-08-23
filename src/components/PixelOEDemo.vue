@@ -6,6 +6,7 @@ import FileUpload from 'primevue/fileupload'
 import InputSwitch from 'primevue/inputswitch'
 import ProgressSpinner from 'primevue/progressspinner'
 import Slider from 'primevue/slider'
+import Dropdown from 'primevue/dropdown'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { PixelOE } from '../index'
 import PaletteSelector from './PaletteSelector.vue'
@@ -20,6 +21,8 @@ const resultImage = ref<PixelImageData | null>(null)
 const processing = ref(false)
 const showSettings = ref(false)
 const showingOriginal = ref(false)
+const processingTime = ref<number>(0)
+const lastEdgeCoverage = ref<number>(0)
 
 const options = reactive<PixelOEOptions>({
   pixelSize: 8,
@@ -37,7 +40,27 @@ const options = reactive<PixelOEOptions>({
   usePalette: false,
   selectedPalette: undefined as ColorPalette | undefined,
   ditherMethod: 'none' as 'none' | 'ordered' | 'error_diffusion',
+  
+  // Advanced edge expansion options
+  edgeExpansionMode: 'optimized' as 'legacy' | 'optimized',
+  edgeDetectionThreshold: 0.1,
+  useEdgeOptimization: true,
+  adaptiveProcessing: true,
 })
+
+// Dropdown options
+const edgeExpansionModes = [
+  { label: 'Legacy (Original)', value: 'legacy', description: 'Original algorithm, highest quality but slower' },
+  { label: 'Optimized (Recommended)', value: 'optimized', description: 'Edge-aware processing, balanced speed and quality' }
+]
+
+const processingModes = [
+  { label: 'Contrast', value: 'contrast' },
+  { label: 'Center', value: 'center' },
+  { label: 'Nearest', value: 'nearest' },
+  { label: 'Bilinear', value: 'bilinear' },
+  { label: 'K-Centroid', value: 'k-centroid' }
+]
 
 // Create PixelOE instance
 let pixelOE: PixelOE
@@ -144,11 +167,15 @@ async function processImage() {
     return
 
   processing.value = true
+  const startTime = performance.now()
 
   try {
     await new Promise(resolve => setTimeout(resolve, 100))
     const result = await processImageAsync(originalImage.value)
     resultImage.value = result.result
+    
+    const endTime = performance.now()
+    processingTime.value = endTime - startTime
 
     await nextTick()
     drawResultImage()
@@ -298,9 +325,20 @@ function drawResultImage() {
               <h4 class="text-sm text-gray-700 font-medium">
                 {{ showingOriginal ? 'Original' : (resultImage ? 'Pixel Art' : 'Ready') }}
               </h4>
-              <p class="mt-1 text-xs text-gray-500">
-                {{ resultImage ? 'Hold to view original comparison' : 'Click Generate to see effect' }}
-              </p>
+              <div class="mt-1 space-y-1">
+                <p class="text-xs text-gray-500">
+                  {{ resultImage ? 'Hold to view original comparison' : 'Click Generate to see effect' }}
+                </p>
+                <div v-if="resultImage && processingTime > 0" class="flex items-center justify-center gap-4 text-xs text-gray-400">
+                  <span>⏱️ {{ processingTime.toFixed(0) }}ms</span>
+                  <span v-if="options.edgeExpansionMode === 'optimized'">
+                    ⚡ Optimized
+                  </span>
+                  <span v-if="lastEdgeCoverage > 0">
+                    🎯 {{ (lastEdgeCoverage * 100).toFixed(0) }}% edges
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div class="relative flex flex-1 items-center justify-center overflow-hidden border border-gray-200 bg-gray-50">
@@ -335,6 +373,9 @@ function drawResultImage() {
                   <ProgressSpinner style="width: 32px; height: 32px" stroke-width="4" class="mb-2" />
                   <p class="text-xs">
                     Processing...
+                  </p>
+                  <p class="mt-1 text-xs text-gray-400">
+                    Using {{ options.edgeExpansionMode === 'legacy' ? 'Legacy' : 'Optimized' }} algorithm
                   </p>
                 </div>
               </div>
@@ -468,6 +509,81 @@ function drawResultImage() {
                   class="w-full"
                   @update:model-value="handleOptionsChange"
                 />
+              </div>
+            </div>
+
+            <!-- Algorithm Performance Section -->
+            <div class="border-t border-gray-200 pt-4">
+              <h4 class="mb-4 text-sm text-gray-700 font-semibold">Algorithm Performance</h4>
+              <div class="space-y-4">
+                <!-- Processing Mode -->
+                <div>
+                  <div class="mb-2 flex items-center justify-between">
+                    <label class="text-sm text-gray-700 font-medium">Processing Mode</label>
+                  </div>
+                  <Dropdown
+                    v-model="options.mode"
+                    :options="processingModes"
+                    option-label="label"
+                    option-value="value"
+                    placeholder="Select processing mode"
+                    class="w-full"
+                    @update:model-value="handleOptionsChange"
+                  />
+                </div>
+
+                <!-- Edge Expansion Algorithm -->
+                <div>
+                  <div class="mb-2 flex items-center justify-between">
+                    <label class="text-sm text-gray-700 font-medium">Edge Expansion Algorithm</label>
+                  </div>
+                  <Dropdown
+                    v-model="options.edgeExpansionMode"
+                    :options="edgeExpansionModes"
+                    option-label="label"
+                    option-value="value"
+                    placeholder="Select edge expansion algorithm"
+                    class="w-full"
+                    @update:model-value="handleOptionsChange"
+                  >
+                    <template #option="slotProps">
+                      <div class="py-2">
+                        <div class="font-medium">{{ slotProps.option.label }}</div>
+                        <div class="text-xs text-gray-500 mt-1">{{ slotProps.option.description }}</div>
+                      </div>
+                    </template>
+                  </Dropdown>
+                  <p class="mt-2 text-xs text-gray-500">
+                    <span v-if="options.edgeExpansionMode === 'legacy'">
+                      🐌 Original algorithm with full quality but slower processing
+                    </span>
+                    <span v-else-if="options.edgeExpansionMode === 'optimized'">
+                      ⚡ Best balance of speed and quality with edge-aware optimization
+                    </span>
+                  </p>
+                </div>
+
+                <!-- Advanced Options for Optimized Mode -->
+                <div v-if="options.edgeExpansionMode === 'optimized'" class="space-y-3">
+                  <!-- Edge Detection Threshold -->
+                  <div>
+                    <div class="mb-2 flex items-center justify-between">
+                      <label class="text-sm text-gray-700 font-medium">Edge Sensitivity</label>
+                      <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ ((options.edgeDetectionThreshold || 0.1) * 100).toFixed(0) }}%</span>
+                    </div>
+                    <Slider
+                      v-model="options.edgeDetectionThreshold"
+                      :min="0.01"
+                      :max="0.3"
+                      :step="0.01"
+                      class="w-full"
+                      @update:model-value="handleOptionsChange"
+                    />
+                    <p class="mt-1 text-xs text-gray-500">
+                      Lower values detect more edges (slower), higher values detect fewer edges (faster)
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 

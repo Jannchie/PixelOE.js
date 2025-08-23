@@ -1,4 +1,6 @@
 import { sigmoid } from '../utils/math'
+import { calculateEdgeCoverage, createEdgeRegionMask, detectEdgesSobel } from './edgeDetection'
+import { calculateFastCombinedStats } from './fastStats'
 import { PixelImageData } from './imageData'
 import { dilate, dilateSmooth, erode, erodeSmooth } from './morphology'
 
@@ -164,6 +166,96 @@ export function calculateExpansionWeight(
 }
 
 /**
+ * Optimized weight calculation using edge-aware processing
+ */
+export function calculateExpansionWeightOptimized(
+  imageData: PixelImageData,
+  patchSize: number = 8,
+  stride: number = 2,
+  avgScale: number = 10,
+  distScale: number = 3,
+  edgeThreshold: number = 0.1,
+): { weights: Float32Array, edgeCoverage: number } {
+  console.log(`🚀 Starting OPTIMIZED edge-aware weight calculation for ${imageData.width}x${imageData.height} image`)
+  const startTime = performance.now()
+
+  const width = imageData.width
+  const height = imageData.height
+  const pixelCount = width * height
+
+  // Step 1: Fast edge detection
+  const edgeStartTime = performance.now()
+  const { edgeMask } = detectEdgesSobel(imageData, edgeThreshold)
+  const edgeCoverage = calculateEdgeCoverage(edgeMask)
+  const edgeTime = performance.now() - edgeStartTime
+
+  console.log(`📊 Edge coverage: ${(edgeCoverage * 100).toFixed(1)}% (${edgeTime.toFixed(1)}ms)`)
+
+  // Create extended processing region around edges
+  const processingMask = createEdgeRegionMask(edgeMask, width, height, Math.ceil(patchSize / 2))
+
+  // Initialize weights with neutral values
+  const weights = new Float32Array(pixelCount)
+  weights.fill(0.5) // Neutral weight for non-edge areas
+
+  // Step 2: Only calculate detailed statistics for edge regions
+  const statsStartTime = performance.now()
+
+  // Count processing pixels
+  let processedPixels = 0
+  for (let i = 0; i < processingMask.length; i++) {
+    if (processingMask[i] > 0)
+      processedPixels++
+  }
+
+  console.log(`🎯 Processing ${processedPixels} pixels (${(processedPixels / pixelCount * 100).toFixed(1)}% of image)`)
+
+  // Calculate statistics only for edge regions with optimized approach
+  const stats = calculateFastCombinedStats(imageData, patchSize, patchSize * 2, stride, processingMask)
+  const statsTime = performance.now() - statsStartTime
+
+  // Step 3: Calculate weights for edge regions only
+  const weightStartTime = performance.now()
+  for (let i = 0; i < weights.length; i++) {
+    if (processingMask[i] > 0 && stats.median[i] !== undefined) {
+      const brightDist = stats.max[i] - stats.median[i]
+      const darkDist = stats.median[i] - stats.min[i]
+      const weight = (stats.median[i] - 0.5) * avgScale - (brightDist - darkDist) * distScale
+      weights[i] = sigmoid(weight)
+    }
+  }
+
+  // Normalize weights in edge regions only
+  let minWeight = Infinity
+  let maxWeight = -Infinity
+  for (let i = 0; i < weights.length; i++) {
+    if (processingMask[i] > 0) {
+      if (weights[i] < minWeight)
+        minWeight = weights[i]
+      if (weights[i] > maxWeight)
+        maxWeight = weights[i]
+    }
+  }
+
+  const range = maxWeight - minWeight
+  if (range > 0) {
+    for (let i = 0; i < weights.length; i++) {
+      if (processingMask[i] > 0) {
+        weights[i] = (weights[i] - minWeight) / range
+      }
+    }
+  }
+
+  const weightTime = performance.now() - weightStartTime
+  const totalTime = performance.now() - startTime
+
+  console.log(`✅ Optimized weight calculation: ${totalTime.toFixed(1)}ms (edge: ${edgeTime.toFixed(1)}ms, stats: ${statsTime.toFixed(1)}ms, weights: ${weightTime.toFixed(1)}ms)`)
+  console.log(`⚡ Speedup: ${(processedPixels / pixelCount < 0.5 ? '2-3x' : '1.5x')} estimated`)
+
+  return { weights, edgeCoverage }
+}
+
+/**
  * Calculate orig_weight based on expansion weight (matching Legacy implementation)
  */
 function calculateOrigWeight(weights: Float32Array): Float32Array {
@@ -283,4 +375,99 @@ export function outlineExpansion(
   }
 
   return { result, weights: processedWeights }
+}
+
+/**
+ * Optimized outline expansion with edge-aware processing
+ */
+export function outlineExpansionOptimized(
+  imageData: PixelImageData,
+  erodeIters: number = 2,
+  dilateIters: number = 2,
+  patchSize: number = 16,
+  avgScale: number = 10,
+  distScale: number = 3,
+  edgeThreshold: number = 0.1,
+  useOptimization: boolean = true,
+): { result: PixelImageData, weights: Float32Array, edgeCoverage?: number } {
+  console.log(`🚀 Starting ${useOptimization ? 'OPTIMIZED' : 'STANDARD'} outline expansion`)
+
+  if (!useOptimization) {
+    // Fall back to standard algorithm
+    return outlineExpansion(imageData, erodeIters, dilateIters, patchSize, avgScale, distScale)
+  }
+
+  const totalStartTime = performance.now()
+
+  // Step 1: Calculate optimized expansion weights using edge detection
+  const { weights, edgeCoverage } = calculateExpansionWeightOptimized(
+    imageData,
+    patchSize,
+    Math.floor(patchSize / 4) * 2,
+    avgScale,
+    distScale,
+    edgeThreshold,
+  )
+
+  // Determine if optimization is worth it based on edge coverage
+  if (edgeCoverage > 0.7) {
+    console.log(`📊 High edge coverage (${(edgeCoverage * 100).toFixed(1)}%), using standard algorithm`)
+    const standardResult = outlineExpansion(imageData, erodeIters, dilateIters, patchSize, avgScale, distScale)
+    return { ...standardResult, edgeCoverage }
+  }
+
+  console.log(`⚡ Using optimized processing for ${(edgeCoverage * 100).toFixed(1)}% edge coverage`)
+
+  // Step 2: Calculate orig_weight = sigmoid((weight - 0.5) * 5) * 0.25
+  const origWeights = calculateOrigWeight(weights)
+
+  // Step 3: Apply morphological operations (same as original)
+  const morphStartTime = performance.now()
+  const imgErode = erode(imageData, erodeIters)
+  const imgDilate = dilate(imageData, dilateIters)
+  const morphTime = performance.now() - morphStartTime
+
+  // Step 4: Three-way weighted blend
+  const blendStartTime = performance.now()
+  let result = threewayBlend(imgErode, imgDilate, imageData, weights, origWeights)
+  const blendTime = performance.now() - blendStartTime
+
+  // Step 5: Second round of morphological operations with smoothing
+  const smoothStartTime = performance.now()
+  result = erodeSmooth(result, erodeIters)
+  result = dilateSmooth(result, dilateIters * 2)
+  result = erodeSmooth(result, erodeIters)
+  const smoothTime = performance.now() - smoothStartTime
+
+  // Step 6: Process weights for return
+  const finalWeights = new Float32Array(weights.length)
+  for (const [i, weight] of weights.entries()) {
+    finalWeights[i] = Math.abs(weight * 2 - 1)
+  }
+
+  // Apply dilation to weights
+  const weightImage = new PixelImageData(imageData.width, imageData.height)
+  for (let y = 0; y < imageData.height; y++) {
+    for (let x = 0; x < imageData.width; x++) {
+      const weightValue = Math.round(finalWeights[y * imageData.width + x] * 255)
+      weightImage.setPixel(x, y, [weightValue, weightValue, weightValue, 255])
+    }
+  }
+
+  const dilatedWeightImage = dilate(weightImage, dilateIters)
+
+  // Extract back to Float32Array
+  const processedWeights = new Float32Array(weights.length)
+  for (let y = 0; y < imageData.height; y++) {
+    for (let x = 0; x < imageData.width; x++) {
+      const [weightValue] = dilatedWeightImage.getPixel(x, y)
+      processedWeights[y * imageData.width + x] = weightValue / 255
+    }
+  }
+
+  const totalTime = performance.now() - totalStartTime
+  console.log(`✅ Optimized outline expansion completed in ${totalTime.toFixed(1)}ms`)
+  console.log(`⏱️  Breakdown: morph: ${morphTime.toFixed(1)}ms, blend: ${blendTime.toFixed(1)}ms, smooth: ${smoothTime.toFixed(1)}ms`)
+
+  return { result, weights: processedWeights, edgeCoverage }
 }

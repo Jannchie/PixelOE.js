@@ -5,7 +5,8 @@ import { matchColorFast } from './core/colorOptimizedFast'
 import { centerDownscale, contrastDownscale, kCentroidDownscale, nearestUpscale } from './core/downscale'
 import { PixelImageData } from './core/imageData'
 import { resizeImageSync } from './core/imageResize'
-import { outlineExpansion } from './core/outline'
+import { outlineExpansion, outlineExpansionOptimized } from './core/outline'
+// Morphology imports removed as no longer needed
 import { quantizeAndDither, quantizeToPalette } from './core/quantization'
 import { applySharpen } from './core/sharpen'
 import type { ColorPalette } from './core/palettes'
@@ -38,6 +39,12 @@ export interface PixelOEOptions {
   // Palette options
   usePalette?: boolean // Use predefined color palette
   selectedPalette?: ColorPalette // Selected color palette
+
+  // Advanced edge expansion options
+  edgeExpansionMode?: 'legacy' | 'optimized' // Edge expansion algorithm
+  edgeDetectionThreshold?: number // Edge detection sensitivity (0.0-1.0)
+  useEdgeOptimization?: boolean // Enable edge-aware processing
+  adaptiveProcessing?: boolean // Use adaptive region-of-interest processing
 }
 
 /**
@@ -81,6 +88,12 @@ export class PixelOE {
       // Palette defaults
       usePalette: false,
       selectedPalette: undefined,
+
+      // Advanced edge expansion defaults
+      edgeExpansionMode: 'optimized',
+      edgeDetectionThreshold: 0.1,
+      useEdgeOptimization: true,
+      adaptiveProcessing: true,
 
       ...options,
     }
@@ -261,19 +274,45 @@ export class PixelOE {
     // Step 1: Outline expansion (before sharpening, matching Python)
     const outlineStart = performance.now()
     if (this.options.thickness > 0) {
-      const expansion = outlineExpansion(
-        result,
-        this.options.thickness,
-        this.options.thickness,
-        this.options.pixelSize, // patchSize (matching Python: patch_size)
-        9, // avgScale (matching Python: 9)
-        4, // distScale (matching Python: 4)
-      )
-      result = expansion.result
-      expansionWeights = expansion.weights
+      const edgeMode = this.options.edgeExpansionMode || 'optimized'
+      
+      console.log(`🎯 [PixelOE] Using edge expansion mode: ${edgeMode}`)
+
+      if (edgeMode === 'optimized' && this.options.useEdgeOptimization) {
+        // Optimized edge-aware processing
+        const expansion = outlineExpansionOptimized(
+          result,
+          this.options.thickness,
+          this.options.thickness,
+          this.options.pixelSize,
+          9, // avgScale
+          4, // distScale
+          this.options.edgeDetectionThreshold || 0.1,
+          true // useOptimization
+        )
+        result = expansion.result
+        expansionWeights = expansion.weights
+        
+        if (expansion.edgeCoverage !== undefined) {
+          console.log(`📊 [PixelOE] Edge coverage: ${(expansion.edgeCoverage * 100).toFixed(1)}%`)
+        }
+
+      } else {
+        // Legacy mode for compatibility
+        const expansion = outlineExpansion(
+          result,
+          this.options.thickness,
+          this.options.thickness,
+          this.options.pixelSize, // patchSize (matching Python: patch_size)
+          9, // avgScale (matching Python: 9)
+          4, // distScale (matching Python: 4)
+        )
+        result = expansion.result
+        expansionWeights = expansion.weights
+      }
     }
     const outlineTime = performance.now() - outlineStart
-    console.log(`📜 [PixelOE] Outline expansion: ${outlineTime.toFixed(1)}ms`)
+    console.log(`📜 [PixelOE] Outline expansion (${this.options.edgeExpansionMode}): ${outlineTime.toFixed(1)}ms`)
 
     // Step 2: Optional sharpening (after outline expansion, matching Python)
     const sharpenStart = performance.now()
@@ -435,4 +474,9 @@ export class PixelOE {
       }, mimeType)
     })
   }
+
+  /**
+   * Simple weighted blend for ultra-fast mode
+   */
+  // Simple weighted blend function removed as no longer needed
 }
