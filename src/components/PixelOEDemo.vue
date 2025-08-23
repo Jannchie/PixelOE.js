@@ -34,7 +34,6 @@ const options = reactive<PixelOEOptions>({
   saturation: 1,
   noUpscale: false,
   noDownscale: false,
-  kCentroids: 3,
   
   // Palette options
   usePalette: false,
@@ -55,11 +54,7 @@ const edgeExpansionModes = [
 ]
 
 const processingModes = [
-  { label: 'Contrast', value: 'contrast' },
-  { label: 'Center', value: 'center' },
-  { label: 'Nearest', value: 'nearest' },
-  { label: 'Bilinear', value: 'bilinear' },
-  { label: 'K-Centroid', value: 'k-centroid' }
+  { label: 'Contrast', value: 'contrast' }
 ]
 
 // Create PixelOE instance

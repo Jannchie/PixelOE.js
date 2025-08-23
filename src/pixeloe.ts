@@ -2,7 +2,7 @@ import type { DitherMethod } from './core/dithering'
 import type { SharpenMode } from './core/sharpen'
 import { colorStyling } from './core/color'
 import { matchColorFast } from './core/colorOptimizedFast'
-import { centerDownscale, contrastDownscale, kCentroidDownscale, nearestUpscale } from './core/downscale'
+import { contrastDownscale } from './core/downscale'
 import { PixelImageData } from './core/imageData'
 import { resizeImageSync } from './core/imageResize'
 import { outlineExpansion, outlineExpansionOptimized } from './core/outline'
@@ -18,13 +18,12 @@ export interface PixelOEOptions {
   pixelSize: number // patch_size in Python demo
   thickness: number // thickness in Python demo
   targetSize?: number // target_size in Python demo (new parameter)
-  mode: 'contrast' | 'center' | 'nearest' | 'bilinear' | 'k-centroid' | 'lanczos'
+  mode: 'contrast'
   colorMatching: boolean
   contrast: number
   saturation: number
   noUpscale: boolean
   noDownscale: boolean
-  kCentroids?: number // Number of centroids for k-centroid mode
 
   // New options from Python version
   sharpenMode?: SharpenMode // Sharpening algorithm
@@ -73,7 +72,6 @@ export class PixelOE {
       saturation: 1,
       noUpscale: false,
       noDownscale: false,
-      kCentroids: 2,
 
       // New default options
       sharpenMode: 'none',
@@ -337,46 +335,8 @@ export class PixelOE {
       const targetSize = this.options.targetSize
         || Math.floor(Math.sqrt(processedImageData.width * processedImageData.height) / this.options.pixelSize)
 
-      console.log(`🔽 [PixelOE] Starting downscaling (mode: ${this.options.mode}, target: ${targetSize})`)
-      switch (this.options.mode) {
-        case 'contrast': {
-          result = contrastDownscale(result, targetSize)
-          break
-        }
-        case 'center': {
-          result = centerDownscale(result, targetSize)
-          break
-        }
-        case 'nearest': {
-          // For nearest, we'll use a simple resize
-          const ratio = imageData.width / imageData.height
-          const targetHeight = Math.floor(Math.sqrt(targetSize * targetSize / ratio))
-          const targetWidth = Math.floor(targetHeight * ratio)
-          result = resizeImageSync(result, targetWidth, targetHeight, 'nearest')
-          break
-        }
-        case 'bilinear': {
-          const ratioB = imageData.width / imageData.height
-          const targetHeightB = Math.floor(Math.sqrt(targetSize * targetSize / ratioB))
-          const targetWidthB = Math.floor(targetHeightB * ratioB)
-          result = resizeImageSync(result, targetWidthB, targetHeightB, 'bilinear')
-          break
-        }
-        case 'lanczos': {
-          const ratioL = imageData.width / imageData.height
-          const targetHeightL = Math.floor(Math.sqrt(targetSize * targetSize / ratioL))
-          const targetWidthL = Math.floor(targetHeightL * ratioL)
-          result = resizeImageSync(result, targetWidthL, targetHeightL, 'bilinear')
-          break
-        }
-        case 'k-centroid': {
-          result = kCentroidDownscale(result, targetSize, this.options.kCentroids || 2)
-          break
-        }
-        default: {
-          result = contrastDownscale(result, this.options.pixelSize)
-        }
-      }
+      console.log(`🔽 [PixelOE] Starting contrast downscaling (target: ${targetSize})`)
+      result = contrastDownscale(result, targetSize)
     }
     const downscaleTime = performance.now() - downscaleStart
     console.log(`🔽 [PixelOE] Downscaling completed: ${downscaleTime.toFixed(1)}ms`)
@@ -422,7 +382,7 @@ export class PixelOE {
     const upscaleStart = performance.now()
     const shouldUpscale = !this.options.noUpscale && !this.options.noPostUpscale
     if (shouldUpscale) {
-      result = nearestUpscale(result, this.options.pixelSize)
+      result = resizeImageSync(result, result.width * this.options.pixelSize, result.height * this.options.pixelSize, 'nearest')
     }
     const upscaleTime = performance.now() - upscaleStart
     console.log(`⬆️ [PixelOE] Upscaling: ${upscaleTime.toFixed(1)}ms`)
