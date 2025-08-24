@@ -9,10 +9,10 @@ export * from './core/imageResize'
 export * from './core/morphology'
 export * from './core/outline'
 
+export * from './core/palettes'
 // New Python-ported features
 export * from './core/quantization'
 export * from './core/sharpen'
-export * from './core/palettes'
 // Main exports
 export { PixelOE } from './pixeloe'
 export type { PixelOEOptions, PixelOEResult } from './pixeloe'

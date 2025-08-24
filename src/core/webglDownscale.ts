@@ -1,5 +1,5 @@
-import { PixelImageData } from './imageData'
 import { contrastDownscale } from './downscale'
+import { PixelImageData } from './imageData'
 
 /**
  * WebGL-based contrast downscaling for GPU acceleration
@@ -166,12 +166,30 @@ export class WebGLContrastDownscale {
     this.positionBuffer = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1, -1, 0, 0,
-      1, -1, 1, 0,
-      -1, 1, 0, 1,
-      -1, 1, 0, 1,
-      1, -1, 1, 0,
-      1, 1, 1, 1,
+      -1,
+      -1,
+      0,
+      0,
+      1,
+      -1,
+      1,
+      0,
+      -1,
+      1,
+      0,
+      1,
+      -1,
+      1,
+      0,
+      1,
+      1,
+      -1,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1,
     ]), gl.STATIC_DRAW)
   }
 
@@ -251,10 +269,10 @@ export class WebGLContrastDownscale {
     if (targetSize <= 0) {
       throw new Error('Target size must be positive')
     }
-    
+
     const gl = this.gl
     const { width, height } = imageData
-    
+
     // Calculate patch size
     const ratio = width / height
     const adjustedTargetSize = Math.sqrt((targetSize * targetSize) / ratio)
@@ -262,7 +280,7 @@ export class WebGLContrastDownscale {
       Math.floor(adjustedTargetSize * ratio),
       Math.floor(adjustedTargetSize),
     ]
-    
+
     const patchSize = Math.max(
       Math.round(height / targetHW[1]),
       Math.round(width / targetHW[0]),
@@ -340,7 +358,7 @@ export class WebGLContrastDownscale {
 
     // Convert to PixelImageData and resize to target
     const processedImage = PixelImageData.fromCanvasImageData(new ImageData(resultData, width, height))
-    
+
     // Use nearest neighbor for final resize to maintain pixelated look
     return this.resizeNearest(processedImage, targetHW[0], targetHW[1])
   }
@@ -348,24 +366,24 @@ export class WebGLContrastDownscale {
   private resizeNearest(imageData: PixelImageData, newWidth: number, newHeight: number): PixelImageData {
     const { width, height, data } = imageData
     const newData = new Uint8ClampedArray(newWidth * newHeight * 4)
-    
+
     const xRatio = width / newWidth
     const yRatio = height / newHeight
-    
+
     for (let y = 0; y < newHeight; y++) {
       for (let x = 0; x < newWidth; x++) {
         const srcX = Math.floor(x * xRatio)
         const srcY = Math.floor(y * yRatio)
         const srcIndex = (srcY * width + srcX) * 4
         const destIndex = (y * newWidth + x) * 4
-        
+
         newData[destIndex] = data[srcIndex]
         newData[destIndex + 1] = data[srcIndex + 1]
         newData[destIndex + 2] = data[srcIndex + 2]
         newData[destIndex + 3] = data[srcIndex + 3]
       }
     }
-    
+
     return new PixelImageData(newWidth, newHeight, new Uint8ClampedArray(newData))
   }
 
@@ -374,11 +392,16 @@ export class WebGLContrastDownscale {
    */
   dispose() {
     const gl = this.gl
-    if (this.statsTexture) gl.deleteTexture(this.statsTexture)
-    if (this.resultTexture) gl.deleteTexture(this.resultTexture)
-    if (this.statsFramebuffer) gl.deleteFramebuffer(this.statsFramebuffer)
-    if (this.resultFramebuffer) gl.deleteFramebuffer(this.resultFramebuffer)
-    if (this.positionBuffer) gl.deleteBuffer(this.positionBuffer)
+    if (this.statsTexture)
+      gl.deleteTexture(this.statsTexture)
+    if (this.resultTexture)
+      gl.deleteTexture(this.resultTexture)
+    if (this.statsFramebuffer)
+      gl.deleteFramebuffer(this.statsFramebuffer)
+    if (this.resultFramebuffer)
+      gl.deleteFramebuffer(this.resultFramebuffer)
+    if (this.positionBuffer)
+      gl.deleteBuffer(this.positionBuffer)
   }
 }
 
@@ -392,7 +415,8 @@ function getWebGLContrastDownscale(): WebGLContrastDownscale {
   if (!webglContrastDownscale) {
     try {
       webglContrastDownscale = new WebGLContrastDownscale()
-    } catch (error) {
+    }
+    catch (error) {
       console.warn('WebGL contrast downscale initialization failed:', error)
       throw error
     }
@@ -404,12 +428,13 @@ function getWebGLContrastDownscale(): WebGLContrastDownscale {
  * GPU-accelerated contrast downscaling (with CPU fallback)
  */
 export function contrastDownscaleWebGL(
-  imageData: PixelImageData, 
-  targetSize: number = 128
+  imageData: PixelImageData,
+  targetSize: number = 128,
 ): PixelImageData {
   try {
     return getWebGLContrastDownscale().contrastDownscale(imageData, targetSize)
-  } catch (error) {
+  }
+  catch (error) {
     console.warn('WebGL contrast downscale failed, falling back to CPU:', error)
     // Fallback to CPU version
     return contrastDownscale(imageData, targetSize)

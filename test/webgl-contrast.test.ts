@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { contrastDownscale } from '../src/core/downscale'
 import { PixelImageData } from '../src/core/imageData'
 import { contrastDownscaleWebGL } from '../src/core/webglDownscale'
-import { contrastDownscale } from '../src/core/downscale'
 
 // Mock DOM environment for WebGL
 Object.defineProperty(global, 'HTMLCanvasElement', {
@@ -26,7 +26,7 @@ Object.defineProperty(global, 'document', {
   },
 })
 
-describe('WebGL Contrast Downscale', () => {
+describe('webGL Contrast Downscale', () => {
   let testImage: PixelImageData
 
   beforeEach(() => {
@@ -34,19 +34,19 @@ describe('WebGL Contrast Downscale', () => {
     const width = 64
     const height = 64
     const data = new Uint8Array(width * height * 4)
-    
+
     // Create a gradient pattern for testing
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const index = (y * width + x) * 4
         const brightness = Math.floor((x + y) / (width + height) * 255)
-        data[index] = brightness     // R
+        data[index] = brightness // R
         data[index + 1] = brightness // G
         data[index + 2] = brightness // B
-        data[index + 3] = 255        // A
+        data[index + 3] = 255 // A
       }
     }
-    
+
     testImage = new PixelImageData(data, width, height)
   })
 
@@ -67,12 +67,13 @@ describe('WebGL Contrast Downscale', () => {
   it('should handle different target sizes', () => {
     // Test that the function accepts different parameters without crashing
     const targetSizes = [16, 32, 64, 128]
-    
-    targetSizes.forEach(targetSize => {
+
+    targetSizes.forEach((targetSize) => {
       expect(() => {
         try {
           contrastDownscaleWebGL(testImage, targetSize)
-        } catch (error) {
+        }
+        catch (error) {
           // Expected to fail in test environment due to WebGL mock
           expect(error).toBeDefined()
         }
@@ -84,7 +85,7 @@ describe('WebGL Contrast Downscale', () => {
     expect(() => {
       contrastDownscaleWebGL(testImage, 0)
     }).toThrow()
-    
+
     expect(() => {
       contrastDownscaleWebGL(testImage, -1)
     }).toThrow()

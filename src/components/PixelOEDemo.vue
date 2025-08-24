@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { PixelImageData, PixelOEOptions } from '../index'
 import type { ColorPalette } from '../core/palettes'
+import type { PixelImageData, PixelOEOptions } from '../index'
 import Button from 'primevue/button'
+import Dropdown from 'primevue/dropdown'
 import FileUpload from 'primevue/fileupload'
 import InputSwitch from 'primevue/inputswitch'
 import ProgressSpinner from 'primevue/progressspinner'
 import Slider from 'primevue/slider'
-import Dropdown from 'primevue/dropdown'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { PixelOE } from '../index'
 import PaletteSelector from './PaletteSelector.vue'
@@ -34,12 +34,12 @@ const options = reactive<PixelOEOptions>({
   saturation: 1,
   noUpscale: false,
   noDownscale: false,
-  
+
   // Palette options
   usePalette: false,
   selectedPalette: undefined as ColorPalette | undefined,
   ditherMethod: 'none' as 'none' | 'ordered' | 'error_diffusion',
-  
+
   // Advanced edge expansion options
   edgeExpansionMode: 'optimized' as 'legacy' | 'optimized',
   edgeDetectionThreshold: 0.1,
@@ -50,11 +50,11 @@ const options = reactive<PixelOEOptions>({
 // Dropdown options
 const edgeExpansionModes = [
   { label: 'Legacy (Original)', value: 'legacy', description: 'Original algorithm, highest quality but slower' },
-  { label: 'Optimized (Recommended)', value: 'optimized', description: 'Edge-aware processing, balanced speed and quality' }
+  { label: 'Optimized (Recommended)', value: 'optimized', description: 'Edge-aware processing, balanced speed and quality' },
 ]
 
 const processingModes = [
-  { label: 'Contrast', value: 'contrast' }
+  { label: 'Contrast', value: 'contrast' },
 ]
 
 // Create PixelOE instance
@@ -168,7 +168,7 @@ async function processImage() {
     await new Promise(resolve => setTimeout(resolve, 100))
     const result = await processImageAsync(originalImage.value)
     resultImage.value = result.result
-    
+
     const endTime = performance.now()
     processingTime.value = endTime - startTime
 
@@ -248,10 +248,10 @@ function drawResultImage() {
 </script>
 
 <template>
-  <div class="h-screen flex flex-col bg-white">
+  <div class="bg-white flex flex-col h-screen">
     <!-- Header -->
-    <div class="flex-shrink-0 bg-black p-4 text-white">
-      <div class="mx-auto max-w-2xl px-4">
+    <div class="text-white p-4 bg-black flex-shrink-0">
+      <div class="mx-auto px-4 max-w-2xl">
         <h1 class="text-xl font-bold">
           PixelOE.js
         </h1>
@@ -261,9 +261,9 @@ function drawResultImage() {
       </div>
     </div>
 
-    <div class="mx-auto max-w-2xl w-full flex flex-1 flex-col overflow-hidden px-4">
+    <div class="mx-auto px-4 flex flex-1 flex-col max-w-2xl w-full overflow-hidden">
       <!-- Upload Area (only when image is loaded) -->
-      <div v-if="originalImage" class="flex-shrink-0 py-4">
+      <div v-if="originalImage" class="py-4 flex-shrink-0">
         <div class="relative">
           <FileUpload
             mode="basic"
@@ -282,26 +282,26 @@ function drawResultImage() {
       <div class="flex-1 overflow-hidden" :class="!originalImage ? 'py-4' : 'pb-4'">
         <!-- Before Upload - Upload area takes full space -->
         <div v-if="!originalImage" class="h-full">
-          <div class="relative h-full">
+          <div class="h-full relative">
             <input
               ref="fileInput"
               type="file"
               accept="image/*"
-              class="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+              class="opacity-0 h-full w-full cursor-pointer inset-0 absolute z-10"
               @change="handleFileInputChange"
             >
             <div
-              class="h-full flex cursor-pointer items-center justify-center border-2 border-gray-300 border-dashed bg-gray-50 text-center transition-all hover:border-gray-400 hover:bg-gray-100"
+              class="text-center border-2 border-gray-300 border-dashed bg-gray-50 flex h-full cursor-pointer transition-all items-center justify-center hover:border-gray-400 hover:bg-gray-100"
               @dragover.prevent="onDragOver"
               @dragleave.prevent="onDragLeave"
               @drop.prevent="onDrop"
             >
               <div class="text-gray-600">
                 <div class="i-carbon-cloud-upload mx-auto mb-4 h-16 w-16" />
-                <p class="mb-2 text-lg font-semibold">
+                <p class="text-lg font-semibold mb-2">
                   Upload Your Image
                 </p>
-                <p class="mb-1 text-sm text-gray-500">
+                <p class="text-sm text-gray-500 mb-1">
                   PNG, JPG, WEBP
                 </p>
                 <p class="text-xs text-gray-400">
@@ -313,9 +313,9 @@ function drawResultImage() {
         </div>
 
         <!-- After Upload - Overlapped View -->
-        <div v-else class="h-full flex flex-col">
+        <div v-else class="flex flex-col h-full">
           <!-- Image Container with Overlay -->
-          <div class="min-h-0 flex flex-1 flex-col">
+          <div class="flex flex-1 flex-col min-h-0">
             <div class="mb-3 text-center">
               <h4 class="text-sm text-gray-700 font-medium">
                 {{ showingOriginal ? 'Original' : (resultImage ? 'Pixel Art' : 'Ready') }}
@@ -324,7 +324,7 @@ function drawResultImage() {
                 <p class="text-xs text-gray-500">
                   {{ resultImage ? 'Hold to view original comparison' : 'Click Generate to see effect' }}
                 </p>
-                <div v-if="resultImage && processingTime > 0" class="flex items-center justify-center gap-4 text-xs text-gray-400">
+                <div v-if="resultImage && processingTime > 0" class="text-xs text-gray-400 flex gap-4 items-center justify-center">
                   <span>⏱️ {{ processingTime.toFixed(0) }}ms</span>
                   <span v-if="options.edgeExpansionMode === 'optimized'">
                     ⚡ Optimized
@@ -336,13 +336,13 @@ function drawResultImage() {
               </div>
             </div>
 
-            <div class="relative flex flex-1 items-center justify-center overflow-hidden border border-gray-200 bg-gray-50">
+            <div class="border border-gray-200 bg-gray-50 flex flex-1 items-center justify-center relative overflow-hidden">
               <!-- Original Canvas (always present when image loaded) -->
               <canvas
                 ref="originalCanvas"
                 :width="originalImage?.width || 0"
                 :height="originalImage?.height || 0"
-                class="h-full w-full object-contain transition-opacity duration-200"
+                class="h-full w-full transition-opacity duration-200 object-contain"
                 :class="{ 'opacity-100': showingOriginal || !resultImage, 'opacity-0': !showingOriginal && resultImage }"
               />
 
@@ -352,7 +352,7 @@ function drawResultImage() {
                 ref="resultCanvas"
                 :width="resultImage.width"
                 :height="resultImage.height"
-                class="pixel-art absolute inset-0 h-full w-full object-contain transition-opacity duration-200"
+                class="pixel-art h-full w-full transition-opacity duration-200 inset-0 absolute object-contain"
                 :class="{ 'opacity-0': showingOriginal, 'opacity-100': !showingOriginal }"
                 @mousedown="showingOriginal = true"
                 @mouseup="showingOriginal = false"
@@ -363,13 +363,13 @@ function drawResultImage() {
               />
 
               <!-- Processing State -->
-              <div v-if="processing" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90">
-                <div class="text-center text-gray-600">
+              <div v-if="processing" class="bg-white bg-opacity-90 flex items-center inset-0 justify-center absolute">
+                <div class="text-gray-600 text-center">
                   <ProgressSpinner style="width: 32px; height: 32px" stroke-width="4" class="mb-2" />
                   <p class="text-xs">
                     Processing...
                   </p>
-                  <p class="mt-1 text-xs text-gray-400">
+                  <p class="text-xs text-gray-400 mt-1">
                     Using {{ options.edgeExpansionMode === 'legacy' ? 'Legacy' : 'Optimized' }} algorithm
                   </p>
                 </div>
@@ -380,7 +380,7 @@ function drawResultImage() {
       </div>
 
       <!-- Bottom Actions -->
-      <div v-if="originalImage" class="flex-shrink-0 border-t border-gray-100 bg-white py-4">
+      <div v-if="originalImage" class="py-4 border-t border-gray-100 bg-white flex-shrink-0">
         <div class="flex space-x-3">
           <Button
             :disabled="processing"
@@ -407,9 +407,9 @@ function drawResultImage() {
     </div>
 
     <!-- Settings Modal -->
-    <div v-if="showSettings" class="fixed inset-0 z-50 flex flex-col bg-white">
-      <div class="h-full w-full flex flex-col" @click.stop>
-        <div class="flex flex-shrink-0 items-center justify-between border-b border-gray-200 p-6">
+    <div v-if="showSettings" class="bg-white flex flex-col inset-0 fixed z-50">
+      <div class="flex flex-col h-full w-full" @click.stop>
+        <div class="p-6 border-b border-gray-200 flex flex-shrink-0 items-center justify-between">
           <h3 class="text-lg text-gray-900 font-semibold">
             Settings
           </h3>
@@ -422,7 +422,7 @@ function drawResultImage() {
           </Button>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-6">
+        <div class="p-6 flex-1 overflow-y-auto">
           <div class="space-y-6">
             <!-- Sliders -->
             <div class="space-y-4">
@@ -430,7 +430,7 @@ function drawResultImage() {
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Pixel Size</label>
-                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.pixelSize }}</span>
+                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.pixelSize }}</span>
                 </div>
                 <Slider
                   v-model="options.pixelSize"
@@ -446,7 +446,7 @@ function drawResultImage() {
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Target Size</label>
-                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.targetSize }}</span>
+                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.targetSize }}</span>
                 </div>
                 <Slider
                   v-model="options.targetSize"
@@ -462,7 +462,7 @@ function drawResultImage() {
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Outline Thickness</label>
-                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.thickness }}</span>
+                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.thickness }}</span>
                 </div>
                 <Slider
                   v-model="options.thickness"
@@ -478,7 +478,7 @@ function drawResultImage() {
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Contrast</label>
-                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.contrast.toFixed(1) }}</span>
+                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.contrast.toFixed(1) }}</span>
                 </div>
                 <Slider
                   v-model="options.contrast"
@@ -494,7 +494,7 @@ function drawResultImage() {
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="text-sm text-gray-700 font-medium">Saturation</label>
-                  <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ options.saturation.toFixed(1) }}</span>
+                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.saturation.toFixed(1) }}</span>
                 </div>
                 <Slider
                   v-model="options.saturation"
@@ -508,8 +508,10 @@ function drawResultImage() {
             </div>
 
             <!-- Algorithm Performance Section -->
-            <div class="border-t border-gray-200 pt-4">
-              <h4 class="mb-4 text-sm text-gray-700 font-semibold">Algorithm Performance</h4>
+            <div class="pt-4 border-t border-gray-200">
+              <h4 class="text-sm text-gray-700 font-semibold mb-4">
+                Algorithm Performance
+              </h4>
               <div class="space-y-4">
                 <!-- Processing Mode -->
                 <div>
@@ -543,12 +545,16 @@ function drawResultImage() {
                   >
                     <template #option="slotProps">
                       <div class="py-2">
-                        <div class="font-medium">{{ slotProps.option.label }}</div>
-                        <div class="text-xs text-gray-500 mt-1">{{ slotProps.option.description }}</div>
+                        <div class="font-medium">
+                          {{ slotProps.option.label }}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                          {{ slotProps.option.description }}
+                        </div>
                       </div>
                     </template>
                   </Dropdown>
-                  <p class="mt-2 text-xs text-gray-500">
+                  <p class="text-xs text-gray-500 mt-2">
                     <span v-if="options.edgeExpansionMode === 'legacy'">
                       🐌 Original algorithm with full quality but slower processing
                     </span>
@@ -564,7 +570,7 @@ function drawResultImage() {
                   <div>
                     <div class="mb-2 flex items-center justify-between">
                       <label class="text-sm text-gray-700 font-medium">Edge Sensitivity</label>
-                      <span class="bg-gray-100 px-2 py-1 text-sm text-gray-600 font-medium">{{ ((options.edgeDetectionThreshold || 0.1) * 100).toFixed(0) }}%</span>
+                      <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ ((options.edgeDetectionThreshold || 0.1) * 100).toFixed(0) }}%</span>
                     </div>
                     <Slider
                       v-model="options.edgeDetectionThreshold"
@@ -574,7 +580,7 @@ function drawResultImage() {
                       class="w-full"
                       @update:model-value="handleOptionsChange"
                     />
-                    <p class="mt-1 text-xs text-gray-500">
+                    <p class="text-xs text-gray-500 mt-1">
                       Lower values detect more edges (slower), higher values detect fewer edges (faster)
                     </p>
                   </div>
@@ -583,8 +589,10 @@ function drawResultImage() {
             </div>
 
             <!-- Palette Section -->
-            <div class="border-t border-gray-200 pt-4">
-              <h4 class="mb-4 text-sm text-gray-700 font-semibold">Color Palette</h4>
+            <div class="pt-4 border-t border-gray-200">
+              <h4 class="text-sm text-gray-700 font-semibold mb-4">
+                Color Palette
+              </h4>
               <PaletteSelector
                 v-model:use-palette="options.usePalette"
                 v-model:selected-palette="options.selectedPalette"
@@ -596,12 +604,12 @@ function drawResultImage() {
             </div>
 
             <!-- Toggle Options -->
-            <div class="border-t border-gray-200 pt-4 space-y-4">
+            <div class="pt-4 border-t border-gray-200 space-y-4">
               <!-- Color Matching -->
               <div class="flex items-center justify-between">
                 <div>
-                  <label class="block text-sm text-gray-700 font-medium">Color Matching</label>
-                  <p class="mt-1 text-xs text-gray-500">
+                  <label class="text-sm text-gray-700 font-medium block">Color Matching</label>
+                  <p class="text-xs text-gray-500 mt-1">
                     Optimize color palette selection
                   </p>
                 </div>
@@ -614,8 +622,8 @@ function drawResultImage() {
               <!-- No Upscale -->
               <div class="flex items-center justify-between">
                 <div>
-                  <label class="block text-sm text-gray-700 font-medium">Disable Upscale</label>
-                  <p class="mt-1 text-xs text-gray-500">
+                  <label class="text-sm text-gray-700 font-medium block">Disable Upscale</label>
+                  <p class="text-xs text-gray-500 mt-1">
                     Prevent image upscaling
                   </p>
                 </div>
@@ -628,8 +636,8 @@ function drawResultImage() {
               <!-- No Downscale -->
               <div class="flex items-center justify-between">
                 <div>
-                  <label class="block text-sm text-gray-700 font-medium">Disable Downscale</label>
-                  <p class="mt-1 text-xs text-gray-500">
+                  <label class="text-sm text-gray-700 font-medium block">Disable Downscale</label>
+                  <p class="text-xs text-gray-500 mt-1">
                     Prevent image downscaling
                   </p>
                 </div>

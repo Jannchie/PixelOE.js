@@ -1,4 +1,5 @@
 import type { DitherMethod } from './core/dithering'
+import type { ColorPalette } from './core/palettes'
 import type { SharpenMode } from './core/sharpen'
 import { colorStyling } from './core/color'
 import { matchColorFast } from './core/colorOptimizedFast'
@@ -9,7 +10,6 @@ import { outlineExpansion, outlineExpansionOptimized } from './core/outline'
 // Morphology imports removed as no longer needed
 import { quantizeAndDither, quantizeToPalette } from './core/quantization'
 import { applySharpen } from './core/sharpen'
-import type { ColorPalette } from './core/palettes'
 
 /**
  * PixelOE configuration options
@@ -34,7 +34,7 @@ export interface PixelOEOptions {
   quantMode?: 'kmeans' // Quantization algorithm (for future extensibility)
   noPostUpscale?: boolean // Skip final upscaling
   resampleMethod?: 'lanczos' | 'bicubic' | 'auto' // High-quality resampling method
-  
+
   // Palette options
   usePalette?: boolean // Use predefined color palette
   selectedPalette?: ColorPalette // Selected color palette
@@ -82,7 +82,7 @@ export class PixelOE {
       quantMode: 'kmeans',
       noPostUpscale: false,
       resampleMethod: 'auto',
-      
+
       // Palette defaults
       usePalette: false,
       selectedPalette: undefined,
@@ -273,7 +273,7 @@ export class PixelOE {
     const outlineStart = performance.now()
     if (this.options.thickness > 0) {
       const edgeMode = this.options.edgeExpansionMode || 'optimized'
-      
+
       console.log(`🎯 [PixelOE] Using edge expansion mode: ${edgeMode}`)
 
       if (edgeMode === 'optimized' && this.options.useEdgeOptimization) {
@@ -286,16 +286,16 @@ export class PixelOE {
           9, // avgScale
           4, // distScale
           this.options.edgeDetectionThreshold || 0.1,
-          true // useOptimization
+          true, // useOptimization
         )
         result = expansion.result
         expansionWeights = expansion.weights
-        
+
         if (expansion.edgeCoverage !== undefined) {
           console.log(`📊 [PixelOE] Edge coverage: ${(expansion.edgeCoverage * 100).toFixed(1)}%`)
         }
-
-      } else {
+      }
+      else {
         // Legacy mode for compatibility
         const expansion = outlineExpansion(
           result,
@@ -344,7 +344,7 @@ export class PixelOE {
     // Step 5: Color quantization and dithering (with palette support)
     const quantizationStart = performance.now()
     const preQuantResult = result // Store for second color matching
-    
+
     if (this.options.usePalette && this.options.selectedPalette) {
       // Use predefined palette
       result = quantizeToPalette(
@@ -353,7 +353,8 @@ export class PixelOE {
         this.options.ditherMethod || 'none',
       )
       console.log(`🎨 [PixelOE] Applied palette: ${this.options.selectedPalette.name} (${this.options.selectedPalette.colors.length} colors)`)
-    } else if (this.options.doQuantization) {
+    }
+    else if (this.options.doQuantization) {
       // Use K-means quantization
       result = quantizeAndDither(
         result,
@@ -366,7 +367,7 @@ export class PixelOE {
     if ((this.options.usePalette || this.options.doQuantization) && this.options.colorMatching) {
       result = matchColorFast(result, preQuantResult)
     }
-    
+
     const quantizationTime = performance.now() - quantizationStart
     console.log(`🌈 [PixelOE] Color quantization: ${quantizationTime.toFixed(1)}ms`)
 

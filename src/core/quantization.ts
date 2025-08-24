@@ -1,6 +1,6 @@
+import type { ColorPalette } from './palettes'
 import { clamp } from '../utils/math'
 import { PixelImageData } from './imageData'
-import type { ColorPalette } from './palettes'
 import { findNearestColorInPalette } from './palettes'
 
 /**
@@ -327,20 +327,20 @@ function orderedDitherInternal(
 
       // Find nearest palette color
       const nearestColor = findNearestPaletteColor([r, g, b], palette)
-      
+
       // Calculate luminance-based dithering
       const originalLum = 0.299 * r + 0.587 * g + 0.114 * b
       const quantizedLum = 0.299 * nearestColor[0] + 0.587 * nearestColor[1] + 0.114 * nearestColor[2]
-      
+
       // Apply dithering noise based on threshold and luminance difference
       const error = originalLum - quantizedLum
       const noise = (threshold - 0.5) * 64 // Scale threshold to noise range
-      
+
       // Add noise to original color before requantizing
       const ditheredR = Math.round(Math.max(0, Math.min(255, r + error * 0.3 + noise)))
       const ditheredG = Math.round(Math.max(0, Math.min(255, g + error * 0.3 + noise)))
       const ditheredB = Math.round(Math.max(0, Math.min(255, b + error * 0.3 + noise)))
-      
+
       // Final quantization with dithered color
       const finalColor = findNearestPaletteColor([ditheredR, ditheredG, ditheredB], palette)
       result.setPixel(x, y, [finalColor[0], finalColor[1], finalColor[2], a])
@@ -433,7 +433,7 @@ function generateBayerMatrixInternal(n: number): number[][] {
       [3, 35, 11, 43, 1, 33, 9, 41],
       [51, 19, 59, 27, 49, 17, 57, 25],
       [15, 47, 7, 39, 13, 45, 5, 37],
-      [63, 31, 55, 23, 61, 29, 53, 21]
+      [63, 31, 55, 23, 61, 29, 53, 21],
     ].map(row => row.map(val => val / 64))
   }
   else {
@@ -449,19 +449,19 @@ function generateRecursiveBayerMatrix(n: number): number[][] {
   // Find the nearest power of 2
   let size = 2
   while (size < n) size *= 2
-  
+
   // Start with 2x2 base case
   let matrix = [
     [0, 2],
-    [3, 1]
+    [3, 1],
   ]
-  
+
   // Recursively build larger matrices
   while (matrix.length < size) {
     const oldSize = matrix.length
     const newSize = oldSize * 2
     const newMatrix: number[][] = []
-    
+
     for (let i = 0; i < newSize; i++) {
       newMatrix[i] = []
       for (let j = 0; j < newSize; j++) {
@@ -471,15 +471,14 @@ function generateRecursiveBayerMatrix(n: number): number[][] {
         newMatrix[i][j] = baseValue + offset
       }
     }
-    
+
     matrix = newMatrix
   }
-  
+
   // Normalize to [0, 1] range
   const maxValue = size * size - 1
   return matrix.map(row => row.map(val => val / (maxValue + 1)))
 }
-
 
 /**
  * Apply quantization with predefined palette

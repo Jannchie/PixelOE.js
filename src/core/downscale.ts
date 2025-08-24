@@ -16,7 +16,8 @@ export async function contrastDownscaleSmart(imageData: PixelImageData, targetSi
       const webglModule = await import('./webglDownscale')
       console.log('🚀 Using WebGL acceleration for contrast downscale')
       return webglModule.contrastDownscaleWebGL(imageData, targetSize)
-    } catch (error) {
+    }
+    catch (error) {
       console.log('WebGL not available, falling back to CPU:', error)
     }
   }
@@ -36,7 +37,8 @@ export function contrastDownscaleSmartSync(imageData: PixelImageData, targetSize
       const webglModule = eval('require')('./webglDownscale')
       console.log('🚀 Using WebGL acceleration for contrast downscale')
       return webglModule.contrastDownscaleWebGL(imageData, targetSize)
-    } catch (error) {
+    }
+    catch (error) {
       console.log('WebGL not available, falling back to CPU:', error)
     }
   }

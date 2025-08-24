@@ -30,7 +30,8 @@ if (typeof ImageData === 'undefined') {
         this.width = data
         this.height = width!
         this.data = new Uint8ClampedArray(this.width * this.height * 4)
-      } else {
+      }
+      else {
         // new ImageData(data, width, height)
         this.data = data
         this.width = width!
