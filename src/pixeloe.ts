@@ -239,8 +239,29 @@ export class PixelOE {
     console.log(`Target size calculation: targetSize=${targetSize}, patchSize=${patchSize}, ratio=${ratio}`)
     console.log(`targetOrgSize=${targetOrgSize}, targetOrgHW=[${targetOrgHW[0]}, ${targetOrgHW[1]}]`)
 
-    // Resize image to target_org_hw (using professional Pica library for maximum quality)
-    return resizeImageSync(imageData, targetOrgHW[0], targetOrgHW[1], 'bilinear')
+    // Respect noUp/noDown flags while keeping aspect ratio
+    const desiredScale = Math.min(targetOrgHW[0] / w, targetOrgHW[1] / h)
+
+    if (this.options.noDownscale && desiredScale < 1) {
+      console.log('⏭️ [PixelOE] Skip target resize: noDownscale enabled')
+      return imageData
+    }
+
+    const cappedScale = this.options.noUpscale ? Math.min(desiredScale, 1) : desiredScale
+    if (cappedScale >= 1 && this.options.noUpscale) {
+      console.log('⏭️ [PixelOE] Skip target resize: noUpscale enabled and target is larger')
+      return imageData
+    }
+
+    const finalWidth = Math.max(1, Math.floor(w * cappedScale))
+    const finalHeight = Math.max(1, Math.floor(h * cappedScale))
+
+    if (finalWidth === w && finalHeight === h) {
+      return imageData
+    }
+
+    // Resize image to the computed dimensions (using Canvas for synchronous path)
+    return resizeImageSync(imageData, finalWidth, finalHeight, 'bilinear')
   }
 
   /**
