@@ -11,7 +11,10 @@ import { dilateWebGL, erodeWebGL } from './webglMorphology'
 function generatePythonCircleKernel(r: number): number[][] {
   const intR = Math.floor(r)
   const size = 2 * intR + 1
-  const kernel = new Array(size).fill(0).map(() => new Array(size).fill(0))
+  const kernel = Array.from(
+    { length: size },
+    () => Array.from({ length: size }, () => 0),
+  )
 
   for (let i = 0; i < size; i++) {
     for (let j = 0; j < size; j++) {
@@ -370,7 +373,10 @@ export function dilateWithKernel(imageData: PixelImageData, kernelIndex: number,
 
     for (let y = 0; y < result.height; y++) {
       for (let x = 0; x < result.width; x++) {
-        let maxR = -Infinity; let maxG = -Infinity; let maxB = -Infinity; let maxA = -Infinity
+        let maxR = -Infinity
+        let maxG = -Infinity
+        let maxB = -Infinity
+        let maxA = -Infinity
 
         // Apply kernel
         for (const [ky, element] of kernel.entries()) {
@@ -382,7 +388,12 @@ export function dilateWithKernel(imageData: PixelImageData, kernelIndex: number,
             const px = Math.min(Math.max(x + kx - kernelHalf, 0), result.width - 1)
             const py = Math.min(Math.max(y + ky - kernelHalf, 0), result.height - 1)
 
-            const [r, g, b, a] = result.getPixel(px, py)
+            const [
+              r,
+              g,
+              b,
+              a,
+            ] = result.getPixel(px, py)
 
             // Matching PyTorch implementation: patches + kernel - 1 (working in [0,1] range)
             const normalizedR = r / 255
@@ -444,7 +455,10 @@ export function erodeWithKernel(imageData: PixelImageData, kernelIndex: number, 
 
     for (let y = 0; y < result.height; y++) {
       for (let x = 0; x < result.width; x++) {
-        let minR = Infinity; let minG = Infinity; let minB = Infinity; let minA = Infinity
+        let minR = Infinity
+        let minG = Infinity
+        let minB = Infinity
+        let minA = Infinity
 
         // Apply kernel
         for (const [ky, element] of kernel.entries()) {
@@ -456,7 +470,12 @@ export function erodeWithKernel(imageData: PixelImageData, kernelIndex: number, 
             const px = Math.min(Math.max(x + kx - kernelHalf, 0), result.width - 1)
             const py = Math.min(Math.max(y + ky - kernelHalf, 0), result.height - 1)
 
-            const [r, g, b, a] = result.getPixel(px, py)
+            const [
+              r,
+              g,
+              b,
+              a,
+            ] = result.getPixel(px, py)
 
             // Matching PyTorch implementation: patches - kernel + 1 (working in [0,1] range)
             const normalizedR = r / 255

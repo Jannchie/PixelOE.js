@@ -28,7 +28,16 @@ export class PixelImageData {
   /**
    * Set pixel color at (x, y) coordinate
    */
-  setPixel(x: number, y: number, [r, g, b, a = 255]: [number, number, number, number?]): void {
+  setPixel(
+    x: number,
+    y: number,
+    [
+      r,
+      g,
+      b,
+      a = 255,
+    ]: [number, number, number, number?],
+  ): void {
     const idx = (y * this.width + x) * 4
     this.data[idx] = r
     this.data[idx + 1] = g
@@ -40,7 +49,11 @@ export class PixelImageData {
    * Get luminance value at (x, y) coordinate
    */
   getLuminance(x: number, y: number): number {
-    const [r, g, b] = this.getPixel(x, y)
+    const [
+      r,
+      g,
+      b,
+    ] = this.getPixel(x, y)
     return 0.299 * r + 0.587 * g + 0.114 * b
   }
 

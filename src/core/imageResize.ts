@@ -196,7 +196,6 @@ export async function resizeImageSmart(
     case 'medium': {
       return resizeImageBilinear(imageData, newWidth, newHeight)
     }
-    case 'high':
     default: {
       return resizeImageLanczos(imageData, newWidth, newHeight)
     }

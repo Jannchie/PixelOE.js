@@ -17,8 +17,16 @@ export function matchColor(source: PixelImageData, target: PixelImageData, level
   // Collect all pixels in LAB space (convert to 0-255 range to match Python cv2)
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
-      const [r, g, b] = source.getPixel(x, y)
-      const [l, a, bLab] = rgbToLab(r, g, b)
+      const [
+        r,
+        g,
+        b,
+      ] = source.getPixel(x, y)
+      const [
+        l,
+        a,
+        bLab,
+      ] = rgbToLab(r, g, b)
       // Convert to cv2-compatible range: L=[0,255], a=[0,255], b=[0,255]
       const cvL = (l / 100) * 255
       const cvA = (a + 128)
@@ -29,8 +37,16 @@ export function matchColor(source: PixelImageData, target: PixelImageData, level
 
   for (let y = 0; y < target.height && y < source.height; y++) {
     for (let x = 0; x < target.width && x < source.width; x++) {
-      const [r, g, b] = target.getPixel(x, y)
-      const [l, a, bLab] = rgbToLab(r, g, b)
+      const [
+        r,
+        g,
+        b,
+      ] = target.getPixel(x, y)
+      const [
+        l,
+        a,
+        bLab,
+      ] = rgbToLab(r, g, b)
       // Convert to cv2-compatible range
       const cvL = (l / 100) * 255
       const cvA = (a + 128)
@@ -49,7 +65,11 @@ export function matchColor(source: PixelImageData, target: PixelImageData, level
   let pixelIndex = 0
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
-      const [l, a_lab, b_lab] = sourcePixels[pixelIndex++]
+      const [
+        l,
+        a_lab,
+        b_lab,
+      ] = sourcePixels[pixelIndex++]
       const a = source.getPixel(x, y)[3]
 
       // Apply statistical transformation
@@ -66,7 +86,11 @@ export function matchColor(source: PixelImageData, target: PixelImageData, level
       const standardA = matchedA - 128
       const standardBLab = matchedB - 128
 
-      const [newR, newG, newB] = labToRgb(standardL, standardA, standardBLab)
+      const [
+        newR,
+        newG,
+        newB,
+      ] = labToRgb(standardL, standardA, standardBLab)
       result.setPixel(x, y, [
         Math.round(clamp(newR, 0, 255)),
         Math.round(clamp(newG, 0, 255)),
@@ -139,7 +163,12 @@ function improvedWaveletColorFix(source: PixelImageData, target: PixelImageData,
         }
         else {
           // Update existing pixel
-          const [r, g, b, a] = result.getPixel(x, y)
+          const [
+            r,
+            g,
+            b,
+            a,
+          ] = result.getPixel(x, y)
           if (channel === 1) {
             result.setPixel(x, y, [r, Math.round(clamp(combined, 0, 255)), b, a])
           }
@@ -218,7 +247,12 @@ export function colorStyling(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = imageData.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = imageData.getPixel(x, y)
 
       // Convert to HSV for saturation adjustment
       const max = Math.max(r, g, b)
@@ -254,25 +288,39 @@ export function colorStyling(
       const x_hsv = c * (1 - Math.abs((h / 60) % 2 - 1))
       const m = newV - c
 
-      let newR = 0; let newG = 0; let newB = 0
+      let newR = 0
+      let newG = 0
+      let newB = 0
 
       if (h >= 0 && h < 60) {
-        newR = c; newG = x_hsv; newB = 0
+        newR = c
+        newG = x_hsv
+        newB = 0
       }
       else if (h >= 60 && h < 120) {
-        newR = x_hsv; newG = c; newB = 0
+        newR = x_hsv
+        newG = c
+        newB = 0
       }
       else if (h >= 120 && h < 180) {
-        newR = 0; newG = c; newB = x_hsv
+        newR = 0
+        newG = c
+        newB = x_hsv
       }
       else if (h >= 180 && h < 240) {
-        newR = 0; newG = x_hsv; newB = c
+        newR = 0
+        newG = x_hsv
+        newB = c
       }
       else if (h >= 240 && h < 300) {
-        newR = x_hsv; newG = 0; newB = c
+        newR = x_hsv
+        newG = 0
+        newB = c
       }
       else if (h >= 300 && h < 360) {
-        newR = c; newG = 0; newB = x_hsv
+        newR = c
+        newG = 0
+        newB = x_hsv
       }
 
       result.setPixel(x, y, [

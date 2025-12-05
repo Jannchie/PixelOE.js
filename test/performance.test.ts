@@ -13,6 +13,8 @@ export interface PerformanceResult {
   opsPerSecond: number
 }
 
+const double = (value: number): number => value * 2
+
 export const PerformanceTester = {
   /**
    * Benchmark a function with specified iterations
@@ -112,8 +114,7 @@ export const PerformanceTester = {
             b = Math.floor(Math.random() * 64) + 96
             break
           }
-          case 'random':
-          default: {
+          case 'random': {
             r = Math.floor(Math.random() * 256)
             g = Math.floor(Math.random() * 256)
             b = Math.floor(Math.random() * 256)
@@ -156,8 +157,7 @@ describe('performance testing infrastructure', () => {
   })
 
   it('should benchmark functions correctly', async () => {
-    const testFn = (x: number) => x * 2
-    const result = await PerformanceTester.benchmark(testFn, [5], 10)
+    const result = await PerformanceTester.benchmark(double, [5], 10)
 
     expect(result.iterations).toBe(10)
     expect(result.totalTime).toBeGreaterThan(0)

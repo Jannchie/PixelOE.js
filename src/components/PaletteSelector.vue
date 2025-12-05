@@ -57,8 +57,9 @@ const ditherOptions = [
 
 // Preview colors for current palette (max 16 colors for display)
 const previewColors = computed(() => {
-  if (!selectedPalette.value)
+  if (!selectedPalette.value) {
     return []
+  }
 
   const colors = selectedPalette.value.colors.slice(0, 16)
   return colors.map(color => rgbToHex(color[0], color[1], color[2]))

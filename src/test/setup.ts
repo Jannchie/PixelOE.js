@@ -3,7 +3,9 @@
 
 // Type declarations for global variables
 declare global {
-  var gc: (() => void) | undefined
+  interface GlobalThis {
+    gc?: () => void
+  }
 }
 
 // Enable performance measurements

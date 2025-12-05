@@ -1,5 +1,6 @@
 // Quick validation test for the optimized PixelOE
 const fs = require('node:fs')
+const process = require('node:process')
 
 console.log('🚀 Quick Validation Test for Optimized PixelOE')
 console.log('==============================================')
@@ -121,4 +122,4 @@ console.log('• Use enableFastMode: true for very large images')
 console.log('• All existing code will work without changes')
 console.log('• Performance benefits increase with image size')
 
-process.exit(allFilesExist && passRate >= 0.8 ? 0 : 1)
+process.exitCode = allFilesExist && passRate >= 0.8 ? 0 : 1

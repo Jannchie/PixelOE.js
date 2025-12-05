@@ -4,7 +4,7 @@ import { PixelImageData } from '../src/core/imageData'
 import { contrastDownscaleWebGL } from '../src/core/webglDownscale'
 
 // Mock DOM environment for WebGL
-Object.defineProperty(global, 'HTMLCanvasElement', {
+Object.defineProperty(globalThis, 'HTMLCanvasElement', {
   value: class HTMLCanvasElement {
     width = 0
     height = 0
@@ -15,18 +15,18 @@ Object.defineProperty(global, 'HTMLCanvasElement', {
   },
 })
 
-Object.defineProperty(global, 'document', {
+Object.defineProperty(globalThis, 'document', {
   value: {
     createElement: (tag: string) => {
       if (tag === 'canvas') {
-        return new (global as any).HTMLCanvasElement()
+        return new (globalThis as any).HTMLCanvasElement()
       }
       return {}
     },
   },
 })
 
-describe('webGL Contrast Downscale', () => {
+describe('webgl contrast downscale', () => {
   let testImage: PixelImageData
 
   beforeEach(() => {
@@ -50,14 +50,14 @@ describe('webGL Contrast Downscale', () => {
     testImage = new PixelImageData(data, width, height)
   })
 
-  it('should handle WebGL initialization failure gracefully', () => {
+  it('should handle webgl initialization failure gracefully', () => {
     // Since we mock WebGL to return null, this should throw an error
     expect(() => {
       contrastDownscaleWebGL(testImage, 32)
     }).toThrow()
   })
 
-  it('should produce similar results to CPU version when WebGL works', () => {
+  it('should produce similar results to cpu version when webgl works', () => {
     // This test would work if WebGL was actually available
     // For now, we just test that both functions have the same interface
     expect(typeof contrastDownscaleWebGL).toBe('function')
@@ -68,7 +68,7 @@ describe('webGL Contrast Downscale', () => {
     // Test that the function accepts different parameters without crashing
     const targetSizes = [16, 32, 64, 128]
 
-    targetSizes.forEach((targetSize) => {
+    for (const targetSize of targetSizes) {
       expect(() => {
         try {
           contrastDownscaleWebGL(testImage, targetSize)
@@ -78,7 +78,7 @@ describe('webGL Contrast Downscale', () => {
           expect(error).toBeDefined()
         }
       }).not.toThrow()
-    })
+    }
   })
 
   it('should validate input parameters', () => {

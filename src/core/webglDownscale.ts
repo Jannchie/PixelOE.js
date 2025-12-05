@@ -392,16 +392,21 @@ export class WebGLContrastDownscale {
    */
   dispose() {
     const gl = this.gl
-    if (this.statsTexture)
+    if (this.statsTexture) {
       gl.deleteTexture(this.statsTexture)
-    if (this.resultTexture)
+    }
+    if (this.resultTexture) {
       gl.deleteTexture(this.resultTexture)
-    if (this.statsFramebuffer)
+    }
+    if (this.statsFramebuffer) {
       gl.deleteFramebuffer(this.statsFramebuffer)
-    if (this.resultFramebuffer)
+    }
+    if (this.resultFramebuffer) {
       gl.deleteFramebuffer(this.resultFramebuffer)
-    if (this.positionBuffer)
+    }
+    if (this.positionBuffer) {
       gl.deleteBuffer(this.positionBuffer)
+    }
   }
 }
 

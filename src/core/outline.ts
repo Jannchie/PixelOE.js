@@ -87,13 +87,15 @@ function calculateCombinedStatsFast(
         for (let i = 0; i < medianPatchCount; i += step) {
           samples.push(patchValues[i])
         }
-        samples.sort((a, b) => a - b)
-        const mid = Math.floor(samples.length / 2)
-        medianValue = samples.length % 2 === 0 ? (samples[mid - 1] + samples[mid]) / 2 : samples[mid]
+        const sortedSamples = samples.toSorted((a, b) => a - b)
+        const mid = Math.floor(sortedSamples.length / 2)
+        medianValue = sortedSamples.length % 2 === 0
+          ? (sortedSamples[mid - 1] + sortedSamples[mid]) / 2
+          : sortedSamples[mid]
       }
       else {
         // For smaller patches, use full calculation
-        const sorted = [...patchValues.subarray(0, medianPatchCount)].sort((a, b) => a - b)
+        const sorted = patchValues.subarray(0, medianPatchCount).toSorted((a, b) => a - b)
         const mid = Math.floor(sorted.length / 2)
         medianValue = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
       }
@@ -203,9 +205,10 @@ export function calculateExpansionWeightOptimized(
 
   // Count processing pixels
   let processedPixels = 0
-  for (let i = 0; i < processingMask.length; i++) {
-    if (processingMask[i] > 0)
+  for (const element of processingMask) {
+    if (element > 0) {
       processedPixels++
+    }
   }
 
   console.log(`🎯 Processing ${processedPixels} pixels (${(processedPixels / pixelCount * 100).toFixed(1)}% of image)`)
@@ -228,12 +231,14 @@ export function calculateExpansionWeightOptimized(
   // Normalize weights in edge regions only
   let minWeight = Infinity
   let maxWeight = -Infinity
-  for (let i = 0; i < weights.length; i++) {
+  for (const [i, weight] of weights.entries()) {
     if (processingMask[i] > 0) {
-      if (weights[i] < minWeight)
-        minWeight = weights[i]
-      if (weights[i] > maxWeight)
-        maxWeight = weights[i]
+      if (weight < minWeight) {
+        minWeight = weight
+      }
+      if (weight > maxWeight) {
+        maxWeight = weight
+      }
     }
   }
 
@@ -288,9 +293,24 @@ function threewayBlend(
       const weight = weights[y * original.width + x]
       const origWeight = origWeights[y * original.width + x]
 
-      const [re, ge, be, ae] = eroded.getPixel(x, y)
-      const [rd, gd, bd, ad] = dilated.getPixel(x, y)
-      const [ro, go, bo, ao] = original.getPixel(x, y)
+      const [
+        re,
+        ge,
+        be,
+        ae,
+      ] = eroded.getPixel(x, y)
+      const [
+        rd,
+        gd,
+        bd,
+        ad,
+      ] = dilated.getPixel(x, y)
+      const [
+        ro,
+        go,
+        bo,
+        ao,
+      ] = original.getPixel(x, y)
 
       // First blend: eroded * weight + dilated * (1 - weight)
       const r1 = re * weight + rd * (1 - weight)

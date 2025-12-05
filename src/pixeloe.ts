@@ -152,7 +152,7 @@ export class PixelOE {
         }
       })
 
-      img.onerror = () => reject(new Error('Failed to load image'))
+      img.addEventListener('error', () => reject(new Error('Failed to load image')))
       img.src = url
     })
   }
@@ -174,7 +174,7 @@ export class PixelOE {
         }
       })
 
-      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.addEventListener('error', () => reject(new Error('Failed to read file')))
       reader.readAsDataURL(file)
     })
   }

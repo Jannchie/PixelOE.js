@@ -38,7 +38,9 @@ function applyConvolution(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      let r = 0; let g = 0; let b = 0
+      let r = 0
+      let g = 0
+      let b = 0
       let a = 0
 
       // Apply kernel
@@ -57,7 +59,12 @@ function applyConvolution(
           sampleX = clamp(sampleX, 0, imageData.width - 1)
           sampleY = clamp(sampleY, 0, imageData.height - 1)
 
-          const [sr, sg, sb, sa] = imageData.getPixel(sampleX, sampleY)
+          const [
+            sr,
+            sg,
+            sb,
+            sa,
+          ] = imageData.getPixel(sampleX, sampleY)
 
           r += sr * kernelWeight
           g += sg * kernelWeight
@@ -147,8 +154,17 @@ export function unsharpMask(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [origR, origG, origB, origA] = imageData.getPixel(x, y)
-      const [blurR, blurG, blurB] = blurred.getPixel(x, y)
+      const [
+        origR,
+        origG,
+        origB,
+        origA,
+      ] = imageData.getPixel(x, y)
+      const [
+        blurR,
+        blurG,
+        blurB,
+      ] = blurred.getPixel(x, y)
 
       // Calculate difference
       const diffR = origR - blurR
@@ -215,8 +231,17 @@ export function laplacianSharpen(
   // Add edge information back to original image
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [origR, origG, origB, origA] = imageData.getPixel(x, y)
-      const [edgeR, edgeG, edgeB] = edges.getPixel(x, y)
+      const [
+        origR,
+        origG,
+        origB,
+        origA,
+      ] = imageData.getPixel(x, y)
+      const [
+        edgeR,
+        edgeG,
+        edgeB,
+      ] = edges.getPixel(x, y)
 
       // Add edges with specified strength
       const sharpR = origR + strength * edgeR
@@ -254,8 +279,17 @@ export function laplacianSharpenEnhanced(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [origR, origG, origB, origA] = imageData.getPixel(x, y)
-      const [edgeR, edgeG, edgeB] = edges.getPixel(x, y)
+      const [
+        origR,
+        origG,
+        origB,
+        origA,
+      ] = imageData.getPixel(x, y)
+      const [
+        edgeR,
+        edgeG,
+        edgeB,
+      ] = edges.getPixel(x, y)
 
       const sharpR = origR + strength * edgeR
       const sharpG = origG + strength * edgeG
@@ -290,7 +324,6 @@ export function applySharpen(
       return laplacianSharpen(imageData, strength * 0.5)
     }
 
-    case 'none':
     default: {
       return imageData.clone()
     }
@@ -309,8 +342,17 @@ export function highPassFilter(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [origR, origG, origB, origA] = imageData.getPixel(x, y)
-      const [blurR, blurG, blurB] = blurred.getPixel(x, y)
+      const [
+        origR,
+        origG,
+        origB,
+        origA,
+      ] = imageData.getPixel(x, y)
+      const [
+        blurR,
+        blurG,
+        blurB,
+      ] = blurred.getPixel(x, y)
 
       // High-pass = original - low-pass (blurred)
       result.setPixel(x, y, [

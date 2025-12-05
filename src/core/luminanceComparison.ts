@@ -39,8 +39,8 @@ export async function compareLuminanceMethods(
       let edgeCount = 0
       let totalStrength = 0
 
-      for (let i = 0; i < edgeMask.length; i++) {
-        if (edgeMask[i] > 0) {
+      for (const [i, element] of edgeMask.entries()) {
+        if (element > 0) {
           edgeCount++
           totalStrength += edgeStrength[i]
         }
@@ -65,7 +65,7 @@ export async function compareLuminanceMethods(
     }
   }
 
-  return results.sort((a, b) => b.avgEdgeStrength - a.avgEdgeStrength)
+  return results.toSorted((a, b) => b.avgEdgeStrength - a.avgEdgeStrength)
 }
 
 /**
@@ -102,30 +102,33 @@ export async function findOptimalLuminanceMethod(
     return { ...result, score }
   })
 
-  const bestResult = scoredResults.sort((a, b) => b.score - a.score)[0]
+  const bestResult = scoredResults.toSorted((a, b) => b.score - a.score)[0]
 
   let reason = ''
   if (prioritizeQuality) {
-    if (bestResult.method === 'oklab') {
-      reason = 'Oklab provides the most perceptually uniform luminance'
-    }
-    else if (bestResult.method === 'lab') {
-      reason = 'Lab L* offers excellent perceptual uniformity for edge detection'
-    }
-    else if (bestResult.method === 'linear') {
-      reason = 'Linear luminance balances accuracy and performance well'
-    }
-    else {
-      reason = `${bestResult.method} provides the best edge detection quality for this image`
+    switch (bestResult.method) {
+      case 'oklab': {
+        reason = 'Oklab provides the most perceptually uniform luminance'
+
+        break
+      }
+      case 'lab': {
+        reason = 'Lab L* offers excellent perceptual uniformity for edge detection'
+
+        break
+      }
+      case 'linear': {
+        reason = 'Linear luminance balances accuracy and performance well'
+
+        break
+      }
+      default: {
+        reason = `${bestResult.method} provides the best edge detection quality for this image`
+      }
     }
   }
   else {
-    if (bestResult.method === 'rec709' || bestResult.method === 'rec601') {
-      reason = 'Fast RGB-based calculation with good edge detection'
-    }
-    else {
-      reason = `${bestResult.method} offers the best performance-quality balance`
-    }
+    reason = bestResult.method === 'rec709' || bestResult.method === 'rec601' ? 'Fast RGB-based calculation with good edge detection' : `${bestResult.method} offers the best performance-quality balance`
   }
 
   return {
@@ -146,7 +149,9 @@ export function getLuminanceRecommendation(
 
   // Fast analysis of image characteristics
   const rawData = imageData.toCanvasImageData().data
-  let totalR = 0; let totalG = 0; let totalB = 0
+  let totalR = 0
+  let totalG = 0
+  let totalB = 0
   let variance = 0
 
   // Sample 1% of pixels for quick analysis
@@ -176,16 +181,17 @@ export function getLuminanceRecommendation(
   // Analyze image characteristics
   const isHighVariance = variance > 2000 // High color variation
   const isColorful = Math.abs(avgR - avgG) > 30 || Math.abs(avgG - avgB) > 30 || Math.abs(avgR - avgB) > 30
-  const isLarge = pixelCount > 500000 // > 500K pixels
+  const isLarge = pixelCount > 500_000 // > 500K pixels
 
   switch (useCase) {
-    case 'speed':
+    case 'speed': {
       if (isLarge) {
         return { method: 'rec709', reason: 'Fast processing for large images' }
       }
       return { method: 'rec601', reason: 'Maximum speed for smaller images' }
+    }
 
-    case 'quality':
+    case 'quality': {
       if (isColorful && isHighVariance) {
         return { method: 'oklab', reason: 'Best perceptual uniformity for colorful, complex images' }
       }
@@ -193,9 +199,9 @@ export function getLuminanceRecommendation(
         return { method: 'lab', reason: 'Excellent edge detection for high-contrast images' }
       }
       return { method: 'linear', reason: 'High quality with good performance' }
+    }
 
-    case 'balanced':
-    default:
+    case 'balanced': {
       if (isLarge && !isColorful) {
         return { method: 'rec709', reason: 'Good balance for large, simple images' }
       }
@@ -203,5 +209,6 @@ export function getLuminanceRecommendation(
         return { method: 'linear', reason: 'Better color handling while maintaining speed' }
       }
       return { method: 'rec709', reason: 'Standard balanced approach' }
+    }
   }
 }

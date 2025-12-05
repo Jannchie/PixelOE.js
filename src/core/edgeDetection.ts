@@ -69,7 +69,7 @@ export function detectEdgesSobel(
       )
 
       // Calculate gradient magnitude (avoid sqrt for speed)
-      const magnitude = Math.sqrt(gx * gx + gy * gy) / 1020 // Normalize by max possible value
+      const magnitude = Math.hypot(gx, gy) / 1020 // Normalize by max possible value
 
       edgeStrength[idx] = magnitude
       edgeMask[idx] = magnitude > threshold ? 255 : 0
@@ -132,7 +132,7 @@ export function detectEdgesCanny(
   imageData: PixelImageData,
   lowThreshold: number = 0.05,
   highThreshold: number = 0.15,
-  gaussianSigma: number = 1.0,
+  gaussianSigma: number = 1,
 ): { edgeMask: Uint8Array, edgeStrength: Float32Array } {
   console.log(`🔍 Starting Canny edge detection`)
   const startTime = performance.now()
@@ -178,7 +178,10 @@ function applyBoxBlur(imageData: PixelImageData, radius: number): PixelImageData
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4
 
-      let sumR = 0; let sumG = 0; let sumB = 0; let count = 0
+      let sumR = 0
+      let sumG = 0
+      let sumB = 0
+      let count = 0
 
       for (let i = -radius; i <= radius; i++) {
         const sampleX = Math.max(0, Math.min(width - 1, x + i))
@@ -216,16 +219,18 @@ function nonMaximumSuppression(imageData: PixelImageData, magnitude: Float32Arra
       let isMaximum = true
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0)
+          if (dx === 0 && dy === 0) {
             continue
+          }
           const neighborIdx = (y + dy) * width + (x + dx)
           if (magnitude[neighborIdx] > current) {
             isMaximum = false
             break
           }
         }
-        if (!isMaximum)
+        if (!isMaximum) {
           break
+        }
       }
 
       suppressed[idx] = isMaximum ? current : 0
@@ -242,11 +247,11 @@ function doubleThresholding(magnitude: Float32Array, lowThreshold: number, highT
   const edgeMask = new Uint8Array(magnitude.length)
 
   // Strong edges
-  for (let i = 0; i < magnitude.length; i++) {
-    if (magnitude[i] > highThreshold) {
+  for (const [i, element] of magnitude.entries()) {
+    if (element > highThreshold) {
       edgeMask[i] = 255
     }
-    else if (magnitude[i] > lowThreshold) {
+    else if (element > lowThreshold) {
       edgeMask[i] = 128 // Weak edge
     }
   }
@@ -269,8 +274,8 @@ function doubleThresholding(magnitude: Float32Array, lowThreshold: number, highT
  */
 export function calculateEdgeCoverage(edgeMask: Uint8Array): number {
   let edgePixels = 0
-  for (let i = 0; i < edgeMask.length; i++) {
-    if (edgeMask[i] > 0) {
+  for (const element of edgeMask) {
+    if (element > 0) {
       edgePixels++
     }
   }

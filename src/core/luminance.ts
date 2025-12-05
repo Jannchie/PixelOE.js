@@ -23,7 +23,7 @@ export function luminanceRec709(r: number, g: number, b: number): number {
  * Optimized for wide color gamut displays
  */
 export function luminanceRec2020(r: number, g: number, b: number): number {
-  return 0.2627 * r + 0.6780 * g + 0.0593 * b
+  return 0.2627 * r + 0.678 * g + 0.0593 * b
 }
 
 /**
@@ -32,7 +32,7 @@ export function luminanceRec2020(r: number, g: number, b: number): number {
  */
 function sRGBToLinear(value: number): number {
   const normalized = value / 255
-  if (normalized <= 0.04045) {
+  if (normalized <= 0.040_45) {
     return normalized / 12.92
   }
   return ((normalized + 0.055) / 1.055) ** 2.4
@@ -64,19 +64,19 @@ export function rgbToLab(r: number, g: number, b: number): { L: number, a: numbe
   const bLinear = sRGBToLinear(b)
 
   // Convert to XYZ (D65 illuminant)
-  let x = rLinear * 0.4124564 + gLinear * 0.3575761 + bLinear * 0.1804375
-  let y = rLinear * 0.2126729 + gLinear * 0.7151522 + bLinear * 0.0721750
-  let z = rLinear * 0.0193339 + gLinear * 0.1191920 + bLinear * 0.9503041
+  let x = rLinear * 0.412_456_4 + gLinear * 0.357_576_1 + bLinear * 0.180_437_5
+  let y = rLinear * 0.212_672_9 + gLinear * 0.715_152_2 + bLinear * 0.072_175
+  let z = rLinear * 0.019_333_9 + gLinear * 0.119_192 + bLinear * 0.950_304_1
 
   // Normalize to D65 white point
-  x = x / 0.95047
-  y = y / 1.00000
-  z = z / 1.08883
+  x = x / 0.950_47
+  y = y / 1
+  z = z / 1.088_83
 
   // Apply Lab transformation
-  const fx = x > 0.008856 ? Math.cbrt(x) : (7.787037 * x + 16 / 116)
-  const fy = y > 0.008856 ? Math.cbrt(y) : (7.787037 * y + 16 / 116)
-  const fz = z > 0.008856 ? Math.cbrt(z) : (7.787037 * z + 16 / 116)
+  const fx = x > 0.008_856 ? Math.cbrt(x) : (7.787_037 * x + 16 / 116)
+  const fy = y > 0.008_856 ? Math.cbrt(y) : (7.787_037 * y + 16 / 116)
+  const fz = z > 0.008_856 ? Math.cbrt(z) : (7.787_037 * z + 16 / 116)
 
   const L = 116 * fy - 16 // Lightness (0-100)
   const a = 500 * (fx - fy) // Green-Red axis
@@ -104,9 +104,9 @@ export function rgbToOklab(r: number, g: number, b: number): { L: number, a: num
   const bLinear = sRGBToLinear(b)
 
   // Convert to LMS cone space
-  const l = 0.4122214708 * rLinear + 0.5363325363 * gLinear + 0.0514459929 * bLinear
-  const m = 0.2119034982 * rLinear + 0.6806995451 * gLinear + 0.1073969566 * bLinear
-  const s = 0.0883024619 * rLinear + 0.2817188376 * gLinear + 0.6299787005 * bLinear
+  const l = 0.412_221_470_8 * rLinear + 0.536_332_536_3 * gLinear + 0.051_445_992_9 * bLinear
+  const m = 0.211_903_498_2 * rLinear + 0.680_699_545_1 * gLinear + 0.107_396_956_6 * bLinear
+  const s = 0.088_302_461_9 * rLinear + 0.281_718_837_6 * gLinear + 0.629_978_700_5 * bLinear
 
   // Apply cube root
   const lCbrt = Math.cbrt(l)
@@ -114,9 +114,9 @@ export function rgbToOklab(r: number, g: number, b: number): { L: number, a: num
   const sCbrt = Math.cbrt(s)
 
   // Convert to Oklab
-  const L = 0.2104542553 * lCbrt + 0.7936177850 * mCbrt - 0.0040720468 * sCbrt
-  const a = 1.9779984951 * lCbrt - 2.4285922050 * mCbrt + 0.4505937099 * sCbrt
-  const b_channel = 0.0259040371 * lCbrt + 0.7827717662 * mCbrt - 0.8086757660 * sCbrt
+  const L = 0.210_454_255_3 * lCbrt + 0.793_617_785 * mCbrt - 0.004_072_046_8 * sCbrt
+  const a = 1.977_998_495_1 * lCbrt - 2.428_592_205 * mCbrt + 0.450_593_709_9 * sCbrt
+  const b_channel = 0.025_904_037_1 * lCbrt + 0.782_771_766_2 * mCbrt - 0.808_675_766 * sCbrt
 
   return { L, a, b_channel }
 }
@@ -163,14 +163,22 @@ export function calculateLuminance(
   method: LuminanceMethod = 'rec709',
 ): number {
   switch (method) {
-    case 'rec601': return luminanceRec601(r, g, b) / 255
-    case 'rec709': return luminanceRec709(r, g, b) / 255
-    case 'rec2020': return luminanceRec2020(r, g, b) / 255
-    case 'linear': return luminanceLinear(r, g, b)
-    case 'lab': return luminanceLab(r, g, b)
-    case 'oklab': return luminanceOklab(r, g, b)
-    case 'wcag': return luminanceWCAG(r, g, b)
-    default: return luminanceRec709(r, g, b) / 255
+    case 'rec601': { return luminanceRec601(r, g, b) / 255
+    }
+    case 'rec709': { return luminanceRec709(r, g, b) / 255
+    }
+    case 'rec2020': { return luminanceRec2020(r, g, b) / 255
+    }
+    case 'linear': { return luminanceLinear(r, g, b)
+    }
+    case 'lab': { return luminanceLab(r, g, b)
+    }
+    case 'oklab': { return luminanceOklab(r, g, b)
+    }
+    case 'wcag': { return luminanceWCAG(r, g, b)
+    }
+    default: { return luminanceRec709(r, g, b) / 255
+    }
   }
 }
 
@@ -188,29 +196,37 @@ export function convertToLuminance(
   let luminanceFunc: (r: number, g: number, b: number) => number
 
   switch (method) {
-    case 'rec601':
+    case 'rec601': {
       luminanceFunc = (r, g, b) => (0.299 * r + 0.587 * g + 0.114 * b) / 255
       break
-    case 'rec709':
+    }
+    case 'rec709': {
       luminanceFunc = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
       break
-    case 'rec2020':
-      luminanceFunc = (r, g, b) => (0.2627 * r + 0.6780 * g + 0.0593 * b) / 255
+    }
+    case 'rec2020': {
+      luminanceFunc = (r, g, b) => (0.2627 * r + 0.678 * g + 0.0593 * b) / 255
       break
-    case 'linear':
+    }
+    case 'linear': {
       luminanceFunc = luminanceLinear
       break
-    case 'lab':
+    }
+    case 'lab': {
       luminanceFunc = luminanceLab
       break
-    case 'oklab':
+    }
+    case 'oklab': {
       luminanceFunc = luminanceOklab
       break
-    case 'wcag':
+    }
+    case 'wcag': {
       luminanceFunc = luminanceWCAG
       break
-    default:
+    }
+    default: {
       luminanceFunc = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    }
   }
 
   for (let i = 0; i < pixelCount; i++) {

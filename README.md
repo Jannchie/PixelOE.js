@@ -93,10 +93,10 @@ const options = {
   targetSize: 256,
   mode: 'contrast' as const,
   colorMatching: true,
-  contrast: 1.0,
-  saturation: 1.0,
+  contrast: 1,
+  saturation: 1,
   noUpscale: false,
-  noDownscale: false
+  noDownscale: false,
 }
 
 // Process image

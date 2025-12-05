@@ -11,7 +11,7 @@ export { contrastDownscaleWebGL } from './webglDownscale'
  */
 export async function contrastDownscaleSmart(imageData: PixelImageData, targetSize: number = 128): Promise<PixelImageData> {
   // Try WebGL acceleration first (if available in browser environment)
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  if (globalThis.window !== undefined && typeof document !== 'undefined') {
     try {
       const webglModule = await import('./webglDownscale')
       console.log('🚀 Using WebGL acceleration for contrast downscale')
@@ -30,20 +30,7 @@ export async function contrastDownscaleSmart(imageData: PixelImageData, targetSi
  * Synchronous smart contrast downscale that tries WebGL first in browser environment
  */
 export function contrastDownscaleSmartSync(imageData: PixelImageData, targetSize: number = 128): PixelImageData {
-  // In browser environment, attempt WebGL first
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    try {
-      // Use dynamic require to avoid circular dependency issues
-      const webglModule = eval('require')('./webglDownscale')
-      console.log('🚀 Using WebGL acceleration for contrast downscale')
-      return webglModule.contrastDownscaleWebGL(imageData, targetSize)
-    }
-    catch (error) {
-      console.log('WebGL not available, falling back to CPU:', error)
-    }
-  }
-
-  console.log('🖥️ Using CPU for contrast downscale')
+  console.log('🖥️ Using CPU for contrast downscale (sync mode)')
   return contrastDownscale(imageData, targetSize)
 }
 
@@ -99,8 +86,16 @@ export function contrastDownscale(imageData: PixelImageData, targetSize: number 
 
       for (let py = y; py < Math.min(y + patchSize, h); py++) {
         for (let px = x; px < Math.min(x + patchSize, w); px++) {
-          const [r, g, b] = imageData.getPixel(px, py)
-          const [l, a, bLab] = rgbToLab(r, g, b)
+          const [
+            r,
+            g,
+            b,
+          ] = imageData.getPixel(px, py)
+          const [
+            l,
+            a,
+            bLab,
+          ] = rgbToLab(r, g, b)
 
           lPatch.push(l)
           aPatch.push(a)
@@ -111,7 +106,11 @@ export function contrastDownscale(imageData: PixelImageData, targetSize: number 
       const selectedL = selectPixelLuminanceByContrast(lPatch)
       const medianA = median(aPatch)
       const medianB = median(bPatch)
-      const [finalR, finalG, finalB] = labToRgb(selectedL, medianA, medianB)
+      const [
+        finalR,
+        finalG,
+        finalB,
+      ] = labToRgb(selectedL, medianA, medianB)
 
       for (let py = y; py < Math.min(y + patchSize, h); py++) {
         for (let px = x; px < Math.min(x + patchSize, w); px++) {

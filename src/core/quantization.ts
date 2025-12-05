@@ -34,8 +34,8 @@ export function generateCentroids(
 
   // Find min and max values for each channel
   const numChannels = pixels[0].length
-  const minValues = new Array(numChannels).fill(255)
-  const maxValues = new Array(numChannels).fill(0)
+  const minValues = Array.from({ length: numChannels }, () => 255)
+  const maxValues = Array.from({ length: numChannels }, () => 0)
 
   for (const pixel of pixels) {
     for (let c = 0; c < numChannels; c++) {
@@ -201,8 +201,11 @@ export function kMeansIteration(
 
   // Calculate new centroids
   const newCentroids: number[][] = []
-  const counts = new Array(numCentroids).fill(0)
-  const sums = new Array(numCentroids).fill(null).map(() => new Array(numChannels).fill(0))
+  const counts = Array.from({ length: numCentroids }, () => 0)
+  const sums = Array.from(
+    { length: numCentroids },
+    () => Array.from({ length: numChannels }, () => 0),
+  )
 
   for (const [i, pixel] of pixels.entries()) {
     const assignment = assignments[i]
@@ -254,7 +257,11 @@ export function colorQuantizationKMeans(
   const pixels: number[][] = []
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b] = imageData.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+      ] = imageData.getPixel(x, y)
       pixels.push([r, g, b])
     }
   }
@@ -279,7 +286,12 @@ export function colorQuantizationKMeans(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = imageData.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = imageData.getPixel(x, y)
       const nearestColor = findNearestPaletteColor([r, g, b], centroids)
       quantized.setPixel(x, y, [nearestColor[0], nearestColor[1], nearestColor[2], a])
       labels.push(findNearestCentroid([r, g, b], centroids))
@@ -322,7 +334,12 @@ function orderedDitherInternal(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = imageData.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = imageData.getPixel(x, y)
       const threshold = bayerMatrix[y % patternSize][x % patternSize]
 
       // Find nearest palette color
@@ -369,7 +386,12 @@ function errorDiffusionDitherInternal(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = result.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = result.getPixel(x, y)
 
       // Find nearest palette color
       const quantizedColor = findNearestPaletteColor([r, g, b], palette)
@@ -389,7 +411,12 @@ function errorDiffusionDitherInternal(
 
         // Check bounds
         if (nx >= 0 && nx < imageData.width && ny >= 0 && ny < imageData.height) {
-          const [nr, ng, nb, na] = result.getPixel(nx, ny)
+          const [
+            nr,
+            ng,
+            nb,
+            na,
+          ] = result.getPixel(nx, ny)
 
           // Add weighted error
           const newR = clamp(nr + errorR * weight, 0, 255)
@@ -409,36 +436,38 @@ function errorDiffusionDitherInternal(
  * Generate proper Bayer matrix using recursive construction
  */
 function generateBayerMatrixInternal(n: number): number[][] {
-  if (n === 2) {
-    return [
-      [0 / 4, 2 / 4],
-      [3 / 4, 1 / 4],
-    ]
-  }
-  else if (n === 4) {
-    return [
-      [0 / 16, 8 / 16, 2 / 16, 10 / 16],
-      [12 / 16, 4 / 16, 14 / 16, 6 / 16],
-      [3 / 16, 11 / 16, 1 / 16, 9 / 16],
-      [15 / 16, 7 / 16, 13 / 16, 5 / 16],
-    ]
-  }
-  else if (n === 8) {
+  switch (n) {
+    case 2: {
+      return [
+        [0 / 4, 2 / 4],
+        [3 / 4, 1 / 4],
+      ]
+    }
+    case 4: {
+      return [
+        [0 / 16, 8 / 16, 2 / 16, 10 / 16],
+        [12 / 16, 4 / 16, 14 / 16, 6 / 16],
+        [3 / 16, 11 / 16, 1 / 16, 9 / 16],
+        [15 / 16, 7 / 16, 13 / 16, 5 / 16],
+      ]
+    }
+    case 8: {
     // Proper 8x8 Bayer matrix
-    return [
-      [0, 32, 8, 40, 2, 34, 10, 42],
-      [48, 16, 56, 24, 50, 18, 58, 26],
-      [12, 44, 4, 36, 14, 46, 6, 38],
-      [60, 28, 52, 20, 62, 30, 54, 22],
-      [3, 35, 11, 43, 1, 33, 9, 41],
-      [51, 19, 59, 27, 49, 17, 57, 25],
-      [15, 47, 7, 39, 13, 45, 5, 37],
-      [63, 31, 55, 23, 61, 29, 53, 21],
-    ].map(row => row.map(val => val / 64))
-  }
-  else {
+      return [
+        [0, 32, 8, 40, 2, 34, 10, 42],
+        [48, 16, 56, 24, 50, 18, 58, 26],
+        [12, 44, 4, 36, 14, 46, 6, 38],
+        [60, 28, 52, 20, 62, 30, 54, 22],
+        [3, 35, 11, 43, 1, 33, 9, 41],
+        [51, 19, 59, 27, 49, 17, 57, 25],
+        [15, 47, 7, 39, 13, 45, 5, 37],
+        [63, 31, 55, 23, 61, 29, 53, 21],
+      ].map(row => row.map(val => val / 64))
+    }
+    default: {
     // For other sizes, use recursive Bayer matrix construction
-    return generateRecursiveBayerMatrix(n)
+      return generateRecursiveBayerMatrix(n)
+    }
   }
 }
 
@@ -494,7 +523,12 @@ export function quantizeToPalette(
 
     for (let y = 0; y < imageData.height; y++) {
       for (let x = 0; x < imageData.width; x++) {
-        const [r, g, b, a] = imageData.getPixel(x, y)
+        const [
+          r,
+          g,
+          b,
+          a,
+        ] = imageData.getPixel(x, y)
         const quantizedColor = findNearestColorInPalette([r, g, b], palette.colors)
         result.setPixel(x, y, [
           Math.round(clamp(quantizedColor[0], 0, 255)),
@@ -541,7 +575,12 @@ export function quantizeAndDither(
 
     for (let y = 0; y < imageData.height; y++) {
       for (let x = 0; x < imageData.width; x++) {
-        const [r, g, b, a] = imageData.getPixel(x, y)
+        const [
+          r,
+          g,
+          b,
+          a,
+        ] = imageData.getPixel(x, y)
         const quantizedColor = findNearestPaletteColor([r, g, b], centroids)
         result.setPixel(x, y, [
           Math.round(clamp(quantizedColor[0], 0, 255)),

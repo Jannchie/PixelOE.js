@@ -35,14 +35,30 @@ function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): 
     const x = Math.floor(Math.random() * source.width)
     const y = Math.floor(Math.random() * source.height)
 
-    const [r, g, b] = source.getPixel(x, y)
-    const [l, a, bLab] = rgbToLab(r, g, b)
+    const [
+      r,
+      g,
+      b,
+    ] = source.getPixel(x, y)
+    const [
+      l,
+      a,
+      bLab,
+    ] = rgbToLab(r, g, b)
     sourcePixels.push([(l / 100) * 255, a + 128, bLab + 128])
 
     const tx = Math.min(x, target.width - 1)
     const ty = Math.min(y, target.height - 1)
-    const [tr, tg, tb] = target.getPixel(tx, ty)
-    const [tl, ta, tbLab] = rgbToLab(tr, tg, tb)
+    const [
+      tr,
+      tg,
+      tb,
+    ] = target.getPixel(tx, ty)
+    const [
+      tl,
+      ta,
+      tbLab,
+    ] = rgbToLab(tr, tg, tb)
     targetPixels.push([(tl / 100) * 255, ta + 128, tbLab + 128])
   }
 
@@ -97,8 +113,17 @@ function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): 
   // Apply transformation to all pixels
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
-      const [r, g, b, a] = source.getPixel(x, y)
-      const [l, lab_a, lab_b] = rgbToLab(r, g, b)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = source.getPixel(x, y)
+      const [
+        l,
+        lab_a,
+        lab_b,
+      ] = rgbToLab(r, g, b)
 
       // Convert to cv2 range
       const cvL = (l / 100) * 255
@@ -130,7 +155,11 @@ function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): 
       const finalA = newA - 128
       const finalB = newB - 128
 
-      const [newR, newG, newB_rgb] = labToRgb(finalL, finalA, finalB)
+      const [
+        newR,
+        newG,
+        newB_rgb,
+      ] = labToRgb(finalL, finalA, finalB)
       result.setPixel(x, y, [
         Math.round(Math.max(0, Math.min(255, newR))),
         Math.round(Math.max(0, Math.min(255, newG))),

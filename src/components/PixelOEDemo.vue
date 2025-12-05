@@ -69,10 +69,11 @@ onMounted(() => {
   // Add paste event listener
   pasteHandler = (event: ClipboardEvent) => {
     const items = event.clipboardData?.items
-    if (!items)
+    if (!items) {
       return
+    }
 
-    for (const item of Array.from(items)) {
+    for (const item of items) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile()
         if (file) {
@@ -95,8 +96,9 @@ onUnmounted(() => {
 // Event handlers
 async function handleFileSelect(event: any) {
   const files = event.files
-  if (!files || files.length === 0)
+  if (!files || files.length === 0) {
     return
+  }
 
   try {
     originalImage.value = await pixelOE.loadImage(files[0])
@@ -158,8 +160,9 @@ function handleOptionsChange() {
 }
 
 async function processImage() {
-  if (!originalImage.value)
+  if (!originalImage.value) {
     return
+  }
 
   processing.value = true
   const startTime = performance.now()
@@ -198,8 +201,9 @@ async function processImageAsync(imageData: PixelImageData): Promise<{ result: P
 }
 
 async function downloadResult() {
-  if (!resultImage.value)
+  if (!resultImage.value) {
     return
+  }
 
   try {
     const blob = await pixelOE.exportBlob(resultImage.value, 'image/png')
@@ -220,12 +224,14 @@ async function downloadResult() {
 }
 
 function drawOriginalImage() {
-  if (!originalCanvas.value || !originalImage.value)
+  if (!originalCanvas.value || !originalImage.value) {
     return
+  }
 
   const ctx = originalCanvas.value.getContext('2d')
-  if (!ctx)
+  if (!ctx) {
     return
+  }
 
   const imageData = originalImage.value.toCanvasImageData()
   ctx.clearRect(0, 0, originalCanvas.value.width, originalCanvas.value.height)
@@ -233,12 +239,14 @@ function drawOriginalImage() {
 }
 
 function drawResultImage() {
-  if (!resultCanvas.value || !resultImage.value)
+  if (!resultCanvas.value || !resultImage.value) {
     return
+  }
 
   const ctx = resultCanvas.value.getContext('2d')
-  if (!ctx)
+  if (!ctx) {
     return
+  }
 
   const imageData = resultImage.value.toCanvasImageData()
   ctx.clearRect(0, 0, resultCanvas.value.width, resultCanvas.value.height)

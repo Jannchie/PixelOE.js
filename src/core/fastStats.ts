@@ -133,8 +133,9 @@ export class SlidingHistogram {
    * Get current median
    */
   getMedian(): number {
-    if (this.totalCount === 0)
+    if (this.totalCount === 0) {
       return (this.minValue + this.maxValue) / 2
+    }
 
     const halfCount = this.totalCount / 2
     let cumulativeCount = 0
@@ -185,12 +186,10 @@ export class SeparableStatsCalculator {
     for (let y = 0; y < height; y++) {
       const rowStart = y * width
       let sum = 0
-      let count = 0
 
       // Initialize window
       for (let x = 0; x <= Math.min(radius, width - 1); x++) {
         sum += input[rowStart + x]
-        count++
       }
       output[rowStart] = sum
 
@@ -199,13 +198,11 @@ export class SeparableStatsCalculator {
         // Add right element if within bounds
         if (x + radius < width) {
           sum += input[rowStart + x + radius]
-          count++
         }
 
         // Remove left element if beyond radius
         if (x - radius - 1 >= 0) {
           sum -= input[rowStart + x - radius - 1]
-          count--
         }
 
         output[rowStart + x] = sum
@@ -225,12 +222,10 @@ export class SeparableStatsCalculator {
   ): void {
     for (let x = 0; x < width; x++) {
       let sum = 0
-      let count = 0
 
       // Initialize window
       for (let y = 0; y <= Math.min(radius, height - 1); y++) {
         sum += input[y * width + x]
-        count++
       }
       output[x] = sum
 
@@ -239,13 +234,11 @@ export class SeparableStatsCalculator {
         // Add bottom element if within bounds
         if (y + radius < height) {
           sum += input[(y + radius) * width + x]
-          count++
         }
 
         // Remove top element if beyond radius
         if (y - radius - 1 >= 0) {
           sum -= input[(y - radius - 1) * width + x]
-          count--
         }
 
         output[y * width + x] = sum
@@ -290,12 +283,13 @@ export function fastApproximateMedian(
   count: number,
   sampleRate: number = 0.1,
 ): number {
-  if (count <= 0)
+  if (count <= 0) {
     return 0
+  }
 
   // For small arrays, use direct sorting
   if (count <= 50) {
-    const sorted = [...values.subarray(0, count)].sort((a, b) => a - b)
+    const sorted = values.subarray(0, count).toSorted((a, b) => a - b)
     const mid = Math.floor(sorted.length / 2)
     return sorted.length % 2 === 0
       ? (sorted[mid - 1] + sorted[mid]) / 2
@@ -311,11 +305,11 @@ export function fastApproximateMedian(
     samples.push(values[i])
   }
 
-  samples.sort((a, b) => a - b)
-  const mid = Math.floor(samples.length / 2)
-  return samples.length % 2 === 0
-    ? (samples[mid - 1] + samples[mid]) / 2
-    : samples[mid]
+  const sortedSamples = samples.toSorted((a, b) => a - b)
+  const mid = Math.floor(sortedSamples.length / 2)
+  return sortedSamples.length % 2 === 0
+    ? (sortedSamples[mid - 1] + sortedSamples[mid]) / 2
+    : sortedSamples[mid]
 }
 
 /**
@@ -402,10 +396,12 @@ export function calculateFastCombinedStats(
           const clampedY = Math.max(0, Math.min(py, height - 1))
           const value = grayData[clampedY * width + clampedX]
 
-          if (value < patchMin)
+          if (value < patchMin) {
             patchMin = value
-          if (value > patchMax)
+          }
+          if (value > patchMax) {
             patchMax = value
+          }
         }
       }
 
@@ -577,10 +573,12 @@ export function calculateAdvancedSeparableStats(
           const value = grayData[clampedY * width + clampedX]
 
           patchValues[patchCount++] = value
-          if (value < patchMin)
+          if (value < patchMin) {
             patchMin = value
-          if (value > patchMax)
+          }
+          if (value > patchMax) {
             patchMax = value
+          }
         }
       }
 

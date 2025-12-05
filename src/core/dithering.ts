@@ -26,7 +26,7 @@ export function generateBayerMatrix(n: number): number[][] {
 
   // Initialize result matrix
   for (let i = 0; i < n; i++) {
-    result[i] = new Array(n)
+    result[i] = Array.from({ length: n })
   }
 
   // Fill quadrants
@@ -110,7 +110,12 @@ export function orderedDither(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = imageData.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = imageData.getPixel(x, y)
       const threshold = thresholdPattern[y][x]
 
       // Find two nearest colors and their distance ratio
@@ -120,8 +125,7 @@ export function orderedDither(
       )
 
       // Choose between color1 and color2 based on threshold and distance ratio
-      let finalColor: number[]
-      finalColor = threshold > distRatio ? color1 : color2
+      const finalColor = threshold > distRatio ? color1 : color2
 
       result.setPixel(x, y, [finalColor[0], finalColor[1], finalColor[2], a])
     }
@@ -151,7 +155,12 @@ export function errorDiffusionDither(
 
   for (let y = 0; y < imageData.height; y++) {
     for (let x = 0; x < imageData.width; x++) {
-      const [r, g, b, a] = result.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = result.getPixel(x, y)
 
       // Find nearest palette color
       const quantizedColor = findNearestPaletteColor([r, g, b], palette)
@@ -171,7 +180,12 @@ export function errorDiffusionDither(
 
         // Check bounds
         if (nx >= 0 && nx < imageData.width && ny >= 0 && ny < imageData.height) {
-          const [nr, ng, nb, na] = result.getPixel(nx, ny)
+          const [
+            nr,
+            ng,
+            nb,
+            na,
+          ] = result.getPixel(nx, ny)
 
           // Add weighted error
           const newR = clamp(nr + errorR * weight, 0, 255)
@@ -205,14 +219,18 @@ export function applyDithering(
       return errorDiffusionDither(imageData, palette)
     }
 
-    case 'none':
     default: {
       // Apply simple quantization without dithering
       const result = new PixelImageData(imageData.width, imageData.height)
 
       for (let y = 0; y < imageData.height; y++) {
         for (let x = 0; x < imageData.width; x++) {
-          const [r, g, b, a] = imageData.getPixel(x, y)
+          const [
+            r,
+            g,
+            b,
+            a,
+          ] = imageData.getPixel(x, y)
           const quantizedColor = findNearestPaletteColor([r, g, b], palette)
           result.setPixel(x, y, [quantizedColor[0], quantizedColor[1], quantizedColor[2], a])
         }
@@ -245,7 +263,12 @@ export function parallelErrorDiffusion(
   for (let y = 0; y < height; y += 2) {
     // Process current row
     for (let x = 0; x < width; x++) {
-      const [r, g, b, a] = result.getPixel(x, y)
+      const [
+        r,
+        g,
+        b,
+        a,
+      ] = result.getPixel(x, y)
       const quantizedColor = findNearestPaletteColor([r, g, b], palette)
 
       result.setPixel(x, y, [quantizedColor[0], quantizedColor[1], quantizedColor[2], a])
@@ -266,7 +289,12 @@ export function parallelErrorDiffusion(
           const ny = y + ky
 
           if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const [nr, ng, nb, na] = result.getPixel(nx, ny)
+            const [
+              nr,
+              ng,
+              nb,
+              na,
+            ] = result.getPixel(nx, ny)
 
             const newR = clamp(nr + errorR * weight, 0, 255)
             const newG = clamp(ng + errorG * weight, 0, 255)
@@ -281,7 +309,12 @@ export function parallelErrorDiffusion(
     // Process next row if it exists
     if (y + 1 < height) {
       for (let x = 0; x < width; x++) {
-        const [r, g, b, a] = result.getPixel(x, y + 1)
+        const [
+          r,
+          g,
+          b,
+          a,
+        ] = result.getPixel(x, y + 1)
         const quantizedColor = findNearestPaletteColor([r, g, b], palette)
         result.setPixel(x, y + 1, [quantizedColor[0], quantizedColor[1], quantizedColor[2], a])
       }
