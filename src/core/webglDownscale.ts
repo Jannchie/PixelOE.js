@@ -435,6 +435,7 @@ function getWebGLContrastDownscale(): WebGLContrastDownscale {
 export function contrastDownscaleWebGL(
   imageData: PixelImageData,
   targetSize: number = 128,
+  allowCpuFallback: boolean = true,
 ): PixelImageData {
   try {
     return getWebGLContrastDownscale().contrastDownscale(imageData, targetSize)
@@ -442,6 +443,9 @@ export function contrastDownscaleWebGL(
   catch (error) {
     console.warn('WebGL contrast downscale failed, falling back to CPU:', error)
     // Fallback to CPU version
-    return contrastDownscale(imageData, targetSize)
+    if (allowCpuFallback) {
+      return contrastDownscale(imageData, targetSize)
+    }
+    throw error
   }
 }

@@ -60,7 +60,10 @@ function selectPixelLuminanceByContrast(luminances: number[]): number {
   return selectedValue
 }
 
-export function contrastDownscale(imageData: PixelImageData, targetSize: number = 128): PixelImageData {
+export function contrastDownscale(
+  imageData: PixelImageData,
+  targetSize: number = 128,
+): PixelImageData {
   const { width: w, height: h } = imageData
   const ratio = w / h
   const adjustedTargetSize = Math.sqrt((targetSize * targetSize) / ratio)
