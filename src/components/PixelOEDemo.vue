@@ -12,7 +12,6 @@ import { PixelOE } from '../index'
 import PaletteSelector from './PaletteSelector.vue'
 
 // Reactive state
-const fileInput = ref<HTMLInputElement>()
 const originalCanvas = ref<HTMLCanvasElement>()
 const resultCanvas = ref<HTMLCanvasElement>()
 
@@ -73,7 +72,8 @@ onMounted(() => {
       return
     }
 
-    for (const item of items) {
+    // eslint-disable-next-line unicorn/prefer-spread
+    for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile()
         if (file) {
@@ -292,7 +292,6 @@ function drawResultImage() {
         <div v-if="!originalImage" class="h-full">
           <div class="h-full relative">
             <input
-              ref="fileInput"
               type="file"
               accept="image/*"
               class="opacity-0 h-full w-full cursor-pointer inset-0 absolute z-10"

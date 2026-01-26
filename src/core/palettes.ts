@@ -93,6 +93,14 @@ export const PREDEFINED_PALETTES: ColorPalette[] = [
     ],
   },
   {
+    name: 'Black & White',
+    description: 'Pure black and white 2-color palette',
+    colors: [
+      [0, 0, 0], // Black
+      [255, 255, 255], // White
+    ],
+  },
+  {
     name: 'Pico-8',
     description: 'Pico-8 fantasy console 16-color palette',
     colors: [
