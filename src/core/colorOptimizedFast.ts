@@ -3,6 +3,7 @@
  */
 import type { PixelImageData } from './imageData'
 import { labToRgb, rgbToLab } from './colorSpace'
+import { matchColor } from './color'
 
 /**
  * Fast color matching using sampling for large images
@@ -15,8 +16,9 @@ export function matchColorFast(source: PixelImageData, target: PixelImageData): 
     return fastSampledColorMatch(source, target)
   }
 
-  // For smaller images, use the original algorithm
-  return originalColorMatch(source)
+  // For smaller images, use the full-quality wavelet color matching
+  console.log(`🎨 [ColorMatch] Using full-quality wavelet matching for ${source.width}x${source.height} image`)
+  return matchColor(source, target)
 }
 
 /**
@@ -172,11 +174,4 @@ function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): 
   return result
 }
 
-/**
- * Original color matching implementation for smaller images
- */
-function originalColorMatch(source: PixelImageData): PixelImageData {
-  // Implementation details of original matchColor function would go here
-  // For now, return source unchanged to avoid the slow implementation
-  return source.clone()
-}
+

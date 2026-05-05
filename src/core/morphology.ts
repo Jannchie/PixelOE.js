@@ -124,8 +124,8 @@ function applyMorphologicalOperationFast(
   const height = imageData.height
   const kernelHalf = Math.floor(kernel.length / 2)
 
-  // Convert to raw data once
-  let srcData = new Uint8ClampedArray(imageData.toCanvasImageData().data)
+  // Use raw data directly - no need to wrap in ImageData first
+  let srcData = new Uint8ClampedArray(imageData.data)
   let dstData = new Uint8ClampedArray(srcData.length)
 
   for (let iter = 0; iter < iterations; iter++) {
@@ -302,41 +302,19 @@ export function erode(imageData: PixelImageData, iterations: number = 1): PixelI
 }
 
 /**
- * Dilate operation with smoothing kernel (GPU-accelerated when possible)
+ * Dilate operation with smoothing kernel (cross-shaped)
  */
 export function dilateSmooth(imageData: PixelImageData, iterations: number = 1): PixelImageData {
-  console.log('🚀 Attempting WebGL smooth dilation...')
-  try {
-    // WebGL version works with 3x3 kernel, smoothing kernel is cross-shaped
-    // For now, use regular WebGL dilation as approximation
-    const result = dilateWebGL(imageData, iterations)
-    console.log('✅ WebGL smooth dilation successful!')
-    return result
-  }
-  catch (error) {
-    console.warn('❌ WebGL smooth dilation failed, using CPU fallback:', error)
-    const kernel = createSmoothingKernel()
-    return applyMorphologicalOperation(imageData, kernel, 'dilate', iterations)
-  }
+  const kernel = createSmoothingKernel()
+  return applyMorphologicalOperation(imageData, kernel, 'dilate', iterations)
 }
 
 /**
- * Erode operation with smoothing kernel (GPU-accelerated when possible)
+ * Erode operation with smoothing kernel (cross-shaped)
  */
 export function erodeSmooth(imageData: PixelImageData, iterations: number = 1): PixelImageData {
-  console.log('🚀 Attempting WebGL smooth erosion...')
-  try {
-    // WebGL version works with 3x3 kernel, smoothing kernel is cross-shaped
-    // For now, use regular WebGL erosion as approximation
-    const result = erodeWebGL(imageData, iterations)
-    console.log('✅ WebGL smooth erosion successful!')
-    return result
-  }
-  catch (error) {
-    console.warn('❌ WebGL smooth erosion failed, using CPU fallback:', error)
-    const kernel = createSmoothingKernel()
-    return applyMorphologicalOperation(imageData, kernel, 'erode', iterations)
-  }
+  const kernel = createSmoothingKernel()
+  return applyMorphologicalOperation(imageData, kernel, 'erode', iterations)
 }
 
 /**

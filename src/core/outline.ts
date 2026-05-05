@@ -2,6 +2,7 @@ import { sigmoid } from '../utils/math'
 import { calculateEdgeCoverage, createEdgeRegionMask, detectEdgesSobel } from './edgeDetection'
 import { calculateFastCombinedStats } from './fastStats'
 import { PixelImageData } from './imageData'
+import { convertToLuminance } from './luminance'
 import { dilate, dilateSmooth, erode, erodeSmooth } from './morphology'
 
 /**
@@ -28,8 +29,8 @@ function calculateCombinedStatsFast(
   const max = new Float32Array(pixelCount)
   const min = new Float32Array(pixelCount)
 
-  // Get raw pixel data once
-  const rawData = imageData.toCanvasImageData().data
+  // Pre-compute luminance once using shared utility
+  const grayData = convertToLuminance(imageData.data, 'rec601')
 
   // Pre-allocate arrays
   const maxPatchSize = medianPatchSize * medianPatchSize
@@ -49,9 +50,8 @@ function calculateCombinedStatsFast(
           const clampedX = Math.max(0, Math.min(px, width - 1))
           const clampedY = Math.max(0, Math.min(py, height - 1))
 
-          const pixelIndex = (clampedY * width + clampedX) * 4
-          const l = 0.299 * rawData[pixelIndex] + 0.587 * rawData[pixelIndex + 1] + 0.114 * rawData[pixelIndex + 2]
-          patchValues[medianPatchCount++] = l / 255
+        const grayVal = grayData[clampedY * width + clampedX]
+          patchValues[medianPatchCount++] = grayVal
         }
       }
 
@@ -65,16 +65,15 @@ function calculateCombinedStatsFast(
           const clampedX = Math.max(0, Math.min(px, width - 1))
           const clampedY = Math.max(0, Math.min(py, height - 1))
 
-          const pixelIndex = (clampedY * width + clampedX) * 4
-          const l = (0.299 * rawData[pixelIndex] + 0.587 * rawData[pixelIndex + 1] + 0.114 * rawData[pixelIndex + 2]) / 255
+        const grayVal = grayData[clampedY * width + clampedX]
 
-          if (l < patchMin) {
-            patchMin = l
+          if (grayVal < patchMin) {
+            patchMin = grayVal
           }
-          if (l > patchMax) {
-            patchMax = l
+          if (grayVal > patchMax) {
+            patchMax = grayVal
           }
-          smallPatch[smallPatchCount++] = l
+          smallPatch[smallPatchCount++] = grayVal
         }
       }
 

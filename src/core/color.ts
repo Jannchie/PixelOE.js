@@ -1,5 +1,5 @@
 import { clamp, mean, standardDeviation } from '../utils/math'
-import { labToRgb, rgbToLab } from './colorSpace'
+import { hsvToRgb, labToRgb, rgbToHsv, rgbToLab } from './colorSpace'
 import { PixelImageData } from './imageData'
 
 /**
@@ -254,81 +254,19 @@ export function colorStyling(
         a,
       ] = imageData.getPixel(x, y)
 
-      // Convert to HSV for saturation adjustment
-      const max = Math.max(r, g, b)
-      const min = Math.min(r, g, b)
-      const diff = max - min
-
-      let h = 0
-      const s = max === 0 ? 0 : diff / max
-      const v = max / 255
-
-      if (diff !== 0) {
-        if (max === r) {
-          h = ((g - b) / diff) % 6
-        }
-        else if (max === g) {
-          h = (b - r) / diff + 2
-        }
-        else {
-          h = (r - g) / diff + 4
-        }
-        h *= 60
-        if (h < 0) {
-          h += 360
-        }
-      }
+      const [h, s, v] = rgbToHsv(r, g, b)
 
       // Apply saturation and contrast adjustments
       const newS = clamp(s * saturation, 0, 1)
       const newV = clamp(v * contrast - (contrast - 1) * 0.5, 0, 1)
 
-      // Convert back to RGB
-      const c = newV * newS
-      const x_hsv = c * (1 - Math.abs((h / 60) % 2 - 1))
-      const m = newV - c
+      const [
+        newR,
+        newG,
+        newB,
+      ] = hsvToRgb(h, newS, newV)
 
-      let newR = 0
-      let newG = 0
-      let newB = 0
-
-      if (h >= 0 && h < 60) {
-        newR = c
-        newG = x_hsv
-        newB = 0
-      }
-      else if (h >= 60 && h < 120) {
-        newR = x_hsv
-        newG = c
-        newB = 0
-      }
-      else if (h >= 120 && h < 180) {
-        newR = 0
-        newG = c
-        newB = x_hsv
-      }
-      else if (h >= 180 && h < 240) {
-        newR = 0
-        newG = x_hsv
-        newB = c
-      }
-      else if (h >= 240 && h < 300) {
-        newR = x_hsv
-        newG = 0
-        newB = c
-      }
-      else if (h >= 300 && h < 360) {
-        newR = c
-        newG = 0
-        newB = x_hsv
-      }
-
-      result.setPixel(x, y, [
-        Math.round((newR + m) * 255),
-        Math.round((newG + m) * 255),
-        Math.round((newB + m) * 255),
-        a,
-      ])
+      result.setPixel(x, y, [newR, newG, newB, a])
     }
   }
 

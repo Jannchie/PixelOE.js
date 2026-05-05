@@ -11,7 +11,7 @@ export interface QuantizationOptions {
   numCentroids: number
   maxIterations?: number
   convergenceThreshold?: number
-  weights?: number[]
+  weights?: Float32Array | number[]
 }
 
 export interface QuantizationResult {
@@ -23,24 +23,28 @@ export interface QuantizationResult {
 /**
  * Generate initial centroids using min-max interpolation
  * Based on centroid_generator from Python version
+ * pixels: flat Float32Array of pixelCount * numChannels
  */
 export function generateCentroids(
-  pixels: number[][],
+  pixels: Float32Array,
+  pixelCount: number,
+  numChannels: number,
   numCentroids: number,
 ): number[][] {
-  if (pixels.length === 0) {
+  if (pixelCount === 0) {
     return []
   }
 
   // Find min and max values for each channel
-  const numChannels = pixels[0].length
-  const minValues = Array.from({ length: numChannels }, () => 255)
-  const maxValues = Array.from({ length: numChannels }, () => 0)
+  const minValues = new Float32Array(numChannels).fill(255)
+  const maxValues = new Float32Array(numChannels).fill(0)
 
-  for (const pixel of pixels) {
+  for (let i = 0; i < pixelCount; i++) {
+    const offset = i * numChannels
     for (let c = 0; c < numChannels; c++) {
-      minValues[c] = Math.min(minValues[c], pixel[c])
-      maxValues[c] = Math.max(maxValues[c], pixel[c])
+      const val = pixels[offset + c]
+      if (val < minValues[c]) minValues[c] = val
+      if (val > maxValues[c]) maxValues[c] = val
     }
   }
 
@@ -183,48 +187,78 @@ export function findNearestPaletteColorsWithDistance(
 }
 
 /**
+ * Internal: Find nearest centroid for a pixel in flat Float32Array
+ */
+function findNearestCentroidFlat(
+  pixels: Float32Array,
+  pixelIndex: number,
+  numChannels: number,
+  centroids: number[][],
+): number {
+  let minDistance = Infinity
+  let nearestIndex = 0
+  const offset = pixelIndex * numChannels
+
+  for (let i = 0; i < centroids.length; i++) {
+    let distance = 0
+    const centroid = centroids[i]
+    for (let c = 0; c < numChannels; c++) {
+      const diff = pixels[offset + c] - centroid[c]
+      distance += diff * diff
+    }
+    if (distance < minDistance) {
+      minDistance = distance
+      nearestIndex = i
+    }
+  }
+  return nearestIndex
+}
+
+/**
  * Perform one iteration of K-means clustering
+ * pixels: flat Float32Array of pixelCount * numChannels
  */
 export function kMeansIteration(
-  pixels: number[][],
+  pixels: Float32Array,
+  pixelCount: number,
+  numChannels: number,
   centroids: number[][],
-  weights?: number[],
+  weights?: Float32Array,
 ): { newCentroids: number[][], totalChange: number } {
   const numCentroids = centroids.length
-  const numChannels = centroids[0].length
 
   // Assign pixels to nearest centroids
-  const assignments: number[] = []
-  for (const pixel of pixels) {
-    assignments.push(findNearestCentroid(pixel, centroids))
+  const assignments = new Uint16Array(pixelCount)
+  for (let i = 0; i < pixelCount; i++) {
+    assignments[i] = findNearestCentroidFlat(pixels, i, numChannels, centroids)
   }
 
-  // Calculate new centroids
-  const newCentroids: number[][] = []
-  const counts = Array.from({ length: numCentroids }, () => 0)
-  const sums = Array.from(
-    { length: numCentroids },
-    () => Array.from({ length: numChannels }, () => 0),
-  )
+  // Calculate new centroids (flat TypedArrays for counts and sums)
+  const counts = new Float32Array(numCentroids)
+  const sums = new Float32Array(numCentroids * numChannels)
 
-  for (const [i, pixel] of pixels.entries()) {
+  for (let i = 0; i < pixelCount; i++) {
     const assignment = assignments[i]
     const weight = weights ? weights[i] : 1
     counts[assignment] += weight
 
+    const offset = i * numChannels
+    const sumOffset = assignment * numChannels
     for (let c = 0; c < numChannels; c++) {
-      sums[assignment][c] += pixel[c] * weight
+      sums[sumOffset + c] += pixels[offset + c] * weight
     }
   }
 
   // Compute new centroids
+  const newCentroids: number[][] = []
   let totalChange = 0
   for (let i = 0; i < numCentroids; i++) {
     const newCentroid: number[] = []
+    const sumOffset = i * numChannels
 
     if (counts[i] > 0) {
       for (let c = 0; c < numChannels; c++) {
-        newCentroid[c] = sums[i][c] / counts[i]
+        newCentroid[c] = sums[sumOffset + c] / counts[i]
       }
     }
     else {
@@ -253,25 +287,28 @@ export function colorQuantizationKMeans(
 ): QuantizationResult {
   const { numCentroids, maxIterations = 50, convergenceThreshold = 1 / 256 } = options
 
-  // Extract pixels
-  const pixels: number[][] = []
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [
-        r,
-        g,
-        b,
-      ] = imageData.getPixel(x, y)
-      pixels.push([r, g, b])
-    }
+  // Extract pixels into flat Float32Array (3 channels: R, G, B)
+  const numChannels = 3
+  const pixelCount = imageData.width * imageData.height
+  const pixels = new Float32Array(pixelCount * numChannels)
+  const rawData = imageData.data
+  for (let i = 0; i < pixelCount; i++) {
+    const offset = i * numChannels
+    const srcIdx = i * 4
+    pixels[offset] = rawData[srcIdx]
+    pixels[offset + 1] = rawData[srcIdx + 1]
+    pixels[offset + 2] = rawData[srcIdx + 2]
   }
 
+  // Convert weights to Float32Array if provided
+  const flatWeights = options.weights ? new Float32Array(options.weights) : undefined
+
   // Initialize centroids
-  let centroids = generateCentroids(pixels, numCentroids)
+  let centroids = generateCentroids(pixels, pixelCount, numChannels, numCentroids)
 
   // Run K-means iterations
   for (let iter = 0; iter < maxIterations; iter++) {
-    const { newCentroids, totalChange } = kMeansIteration(pixels, centroids, options.weights)
+    const { newCentroids, totalChange } = kMeansIteration(pixels, pixelCount, numChannels, centroids, flatWeights)
     centroids = newCentroids
 
     // Check for convergence
@@ -284,18 +321,19 @@ export function colorQuantizationKMeans(
   const quantized = new PixelImageData(imageData.width, imageData.height)
   const labels: number[] = []
 
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [
-        r,
-        g,
-        b,
-        a,
-      ] = imageData.getPixel(x, y)
-      const nearestColor = findNearestPaletteColor([r, g, b], centroids)
-      quantized.setPixel(x, y, [nearestColor[0], nearestColor[1], nearestColor[2], a])
-      labels.push(findNearestCentroid([r, g, b], centroids))
-    }
+  for (let i = 0; i < pixelCount; i++) {
+    const y = Math.floor(i / imageData.width)
+    const x = i % imageData.width
+    const [
+      ,
+      ,
+      ,
+      a,
+    ] = imageData.getPixel(x, y)
+    const nearestIndex = findNearestCentroidFlat(pixels, i, numChannels, centroids)
+    const nearestColor = centroids[nearestIndex]
+    quantized.setPixel(x, y, [Math.round(nearestColor[0]), Math.round(nearestColor[1]), Math.round(nearestColor[2]), a])
+    labels.push(nearestIndex)
   }
 
   return { quantized, centroids, labels }
@@ -556,16 +594,10 @@ export function quantizeAndDither(
   ditherMethod: 'none' | 'ordered' | 'error_diffusion' = 'none',
   weights?: Float32Array,
 ): PixelImageData {
-  // Prepare weights array if provided
-  let weightsArray: number[] | undefined
-  if (weights) {
-    weightsArray = [...weights]
-  }
-
   // First perform K-means quantization (with weights if available)
   const { centroids } = colorQuantizationKMeans(imageData, {
     numCentroids,
-    weights: weightsArray,
+    weights: weights || undefined,
   })
 
   // Apply dithering with the generated palette
