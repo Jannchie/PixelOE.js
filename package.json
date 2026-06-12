@@ -10,18 +10,16 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "lint": "eslint . --fix"
+    "lint": "eslint . --fix",
+    "gen:previews": "node scripts/generate-preset-previews.mjs"
   },
   "dependencies": {
-    "@primevue/themes": "catalog:",
-    "pica": "catalog:",
-    "primevue": "catalog:",
-    "vue": "catalog:"
+    "vue": "catalog:",
+    "vue-wf": "catalog:"
   },
   "devDependencies": {
     "@iconify-json/carbon": "catalog:",
     "@jannchie/eslint-config": "catalog:",
-    "@types/pica": "catalog:",
     "@unocss/eslint-plugin": "catalog:",
     "@unocss/preset-icons": "catalog:",
     "@unocss/preset-uno": "catalog:",
@@ -31,6 +29,7 @@
     "@vue/tsconfig": "catalog:",
     "eslint": "catalog:",
     "jsdom": "catalog:",
+    "playwright-core": "catalog:",
     "typescript": "catalog:",
     "unocss": "catalog:",
     "vite": "catalog:",

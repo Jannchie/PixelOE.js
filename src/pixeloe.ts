@@ -6,7 +6,7 @@ import { matchColorFast } from './core/colorOptimizedFast'
 import { contrastDownscale } from './core/downscale'
 import { PixelImageData } from './core/imageData'
 import { resizeImageSync } from './core/imageResize'
-import { outlineExpansion, outlineExpansionOptimized } from './core/outline'
+import { outlineExpansion, outlineExpansionOptimized, outlineExpansionOptimizedAsync } from './core/outline'
 // Morphology imports removed as no longer needed
 import { quantizeAndDither, quantizeToPalette } from './core/quantization'
 import { applySharpen } from './core/sharpen'
@@ -265,73 +265,146 @@ export class PixelOE {
   }
 
   /**
+   * Preprocess + target-size resize, shared by sync and async pipelines.
+   */
+  private prepareForOutline(imageData: PixelImageData): PixelImageData {
+    const preprocessStart = performance.now()
+    let processedImageData = this.preprocessImage(imageData)
+    const preprocessTime = performance.now() - preprocessStart
+    console.log(`📦 [PixelOE] Preprocessing: ${preprocessTime.toFixed(1)}ms`)
+
+    const targetResizeStart = performance.now()
+    processedImageData = this.applyTargetSizeResize(processedImageData)
+    const targetResizeTime = performance.now() - targetResizeStart
+    console.log(`🎯 [PixelOE] Target size resize: ${targetResizeTime.toFixed(1)}ms`)
+
+    return processedImageData
+  }
+
+  /**
    * Main pixelize processing function
    */
   pixelize(imageData: PixelImageData, returnIntermediate: boolean = false): PixelOEResult {
     const totalStart = performance.now()
     console.log(`🎨 [PixelOE] Starting pixelize process for ${imageData.width}x${imageData.height} image`)
 
-    // Preprocess large images to avoid memory issues
-    const preprocessStart = performance.now()
-    let processedImageData = this.preprocessImage(imageData)
-    const preprocessTime = performance.now() - preprocessStart
-    console.log(`📦 [PixelOE] Preprocessing: ${preprocessTime.toFixed(1)}ms`)
-
-    // Apply Python-style target size calculation and resize (matching pixelize.py)
-    const targetResizeStart = performance.now()
-    processedImageData = this.applyTargetSizeResize(processedImageData)
-    const targetResizeTime = performance.now() - targetResizeStart
-    console.log(`🎯 [PixelOE] Target size resize: ${targetResizeTime.toFixed(1)}ms`)
-
-    // Skip padding for now to maintain original behavior
-    // processedImageData = this.addPadding(processedImageData, this.options.pixelSize);
-
+    const processedImageData = this.prepareForOutline(imageData)
     const originalImageData = processedImageData.clone()
-    let result = processedImageData.clone()
+    let result = processedImageData
     let expansionWeights: Float32Array | undefined
 
     // Step 1: Outline expansion (before sharpening, matching Python)
     const outlineStart = performance.now()
     if (this.options.thickness > 0) {
       const edgeMode = this.options.edgeExpansionMode || 'optimized'
-
       console.log(`🎯 [PixelOE] Using edge expansion mode: ${edgeMode}`)
 
+      const expansion = edgeMode === 'optimized' && this.options.useEdgeOptimization
+        ? outlineExpansionOptimized(
+            result,
+            this.options.thickness,
+            this.options.thickness,
+            this.options.pixelSize,
+            9, // avgScale
+            4, // distScale
+            this.options.edgeDetectionThreshold || 0.1,
+            true, // useOptimization
+            returnIntermediate, // computeReturnWeights
+          )
+        : outlineExpansion(
+            result,
+            this.options.thickness,
+            this.options.thickness,
+            this.options.pixelSize,
+            9,
+            4,
+          )
+      result = expansion.result
+      expansionWeights = expansion.weights
+    }
+    const outlineTime = performance.now() - outlineStart
+    console.log(`📜 [PixelOE] Outline expansion (${this.options.edgeExpansionMode}): ${outlineTime.toFixed(1)}ms`)
+
+    result = this.finishPipeline(result, originalImageData)
+
+    const totalTime = performance.now() - totalStart
+    console.log(`✅ [PixelOE] Total processing time: ${totalTime.toFixed(1)}ms`)
+    console.log(`🏁 [PixelOE] Final result: ${result.width}x${result.height}`)
+
+    return {
+      result,
+      intermediate: returnIntermediate ? originalImageData : undefined,
+      weights: returnIntermediate ? expansionWeights : undefined,
+    }
+  }
+
+  /**
+   * Async pixelize: same output as {@link pixelize}, but the outline
+   * morphology runs on a Web Worker pool when available (multi-core),
+   * keeping the main thread responsive. Falls back to the synchronous
+   * path in environments without Workers.
+   */
+  async pixelizeAsync(imageData: PixelImageData, returnIntermediate: boolean = false): Promise<PixelOEResult> {
+    const totalStart = performance.now()
+    console.log(`🎨 [PixelOE] Starting async pixelize process for ${imageData.width}x${imageData.height} image`)
+
+    const processedImageData = this.prepareForOutline(imageData)
+    const originalImageData = processedImageData.clone()
+    let result = processedImageData
+    let expansionWeights: Float32Array | undefined
+
+    const outlineStart = performance.now()
+    if (this.options.thickness > 0) {
+      const edgeMode = this.options.edgeExpansionMode || 'optimized'
+
       if (edgeMode === 'optimized' && this.options.useEdgeOptimization) {
-        // Optimized edge-aware processing
-        const expansion = outlineExpansionOptimized(
+        const expansion = await outlineExpansionOptimizedAsync(
           result,
           this.options.thickness,
           this.options.thickness,
           this.options.pixelSize,
-          9, // avgScale
-          4, // distScale
+          9,
+          4,
           this.options.edgeDetectionThreshold || 0.1,
-          true, // useOptimization
+          true,
+          returnIntermediate,
         )
         result = expansion.result
         expansionWeights = expansion.weights
-
-        if (expansion.edgeCoverage !== undefined) {
-          console.log(`📊 [PixelOE] Edge coverage: ${(expansion.edgeCoverage * 100).toFixed(1)}%`)
-        }
       }
       else {
-        // Legacy mode for compatibility
         const expansion = outlineExpansion(
           result,
           this.options.thickness,
           this.options.thickness,
-          this.options.pixelSize, // patchSize (matching Python: patch_size)
-          9, // avgScale (matching Python: 9)
-          4, // distScale (matching Python: 4)
+          this.options.pixelSize,
+          9,
+          4,
         )
         result = expansion.result
         expansionWeights = expansion.weights
       }
     }
     const outlineTime = performance.now() - outlineStart
-    console.log(`📜 [PixelOE] Outline expansion (${this.options.edgeExpansionMode}): ${outlineTime.toFixed(1)}ms`)
+    console.log(`📜 [PixelOE] Outline expansion (parallel): ${outlineTime.toFixed(1)}ms`)
+
+    result = this.finishPipeline(result, originalImageData)
+
+    const totalTime = performance.now() - totalStart
+    console.log(`✅ [PixelOE] Total processing time: ${totalTime.toFixed(1)}ms`)
+
+    return {
+      result,
+      intermediate: returnIntermediate ? originalImageData : undefined,
+      weights: returnIntermediate ? expansionWeights : undefined,
+    }
+  }
+
+  /**
+   * Pipeline steps after outline expansion (shared by sync/async paths).
+   */
+  private finishPipeline(input: PixelImageData, originalImageData: PixelImageData): PixelImageData {
+    let result = input
 
     // Step 2: Optional sharpening (after outline expansion, matching Python)
     const sharpenStart = performance.now()
@@ -354,7 +427,7 @@ export class PixelOE {
     if (!this.options.noDownscale) {
       // Use targetSize parameter if provided, otherwise calculate from pixelSize (backward compatibility)
       const targetSize = this.options.targetSize
-        || Math.floor(Math.sqrt(processedImageData.width * processedImageData.height) / this.options.pixelSize)
+        || Math.floor(Math.sqrt(originalImageData.width * originalImageData.height) / this.options.pixelSize)
 
       console.log(`🔽 [PixelOE] Starting contrast downscaling (target: ${targetSize})`)
       result = contrastDownscale(result, targetSize)
@@ -409,15 +482,7 @@ export class PixelOE {
     const upscaleTime = performance.now() - upscaleStart
     console.log(`⬆️ [PixelOE] Upscaling: ${upscaleTime.toFixed(1)}ms`)
 
-    const totalTime = performance.now() - totalStart
-    console.log(`✅ [PixelOE] Total processing time: ${totalTime.toFixed(1)}ms`)
-    console.log(`🏁 [PixelOE] Final result: ${result.width}x${result.height}`)
-
-    return {
-      result,
-      intermediate: returnIntermediate ? originalImageData : undefined,
-      weights: returnIntermediate ? expansionWeights : undefined,
-    }
+    return result
   }
 
   /**

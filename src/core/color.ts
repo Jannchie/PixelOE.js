@@ -1,182 +1,122 @@
-import { clamp, mean, standardDeviation } from '../utils/math'
-import { hsvToRgb, labToRgb, rgbToHsv, rgbToLab } from './colorSpace'
+import { clamp } from '../utils/math'
+import { hsvToRgb, rgbToHsv } from './colorSpace'
 import { PixelImageData } from './imageData'
+import { labPlanesToRgba, rgbaToLabPlanes } from './planes'
 
 /**
  * Color processing utilities
  */
 
+interface ChannelStats {
+  mean: number
+  std: number
+}
+
+function planeStats(plane: Float32Array, scale: number, offset: number): ChannelStats {
+  let sum = 0
+  for (const element of plane) {
+    sum += element * scale + offset
+  }
+  const mean = sum / plane.length
+
+  let varSum = 0
+  for (const element of plane) {
+    const d = element * scale + offset - mean
+    varSum += d * d
+  }
+  return { mean, std: Math.sqrt(varSum / plane.length) }
+}
+
 /**
- * Match color statistics between source and target images (updated to match Python)
+ * Match color statistics between source and target images (matching Python).
+ * Statistical Lab transfer followed by a multi-level wavelet color fix.
  */
 export function matchColor(source: PixelImageData, target: PixelImageData, level: number = 5): PixelImageData {
-  // First convert to LAB and apply statistical matching across all pixels at once
-  const sourcePixels: [number, number, number][] = []
-  const targetPixels: [number, number, number][] = []
+  const srcPlanes = rgbaToLabPlanes(source.data, source.width, source.height)
+  const tgtPlanes = rgbaToLabPlanes(target.data, target.width, target.height)
 
-  // Collect all pixels in LAB space (convert to 0-255 range to match Python cv2)
-  for (let y = 0; y < source.height; y++) {
-    for (let x = 0; x < source.width; x++) {
-      const [
-        r,
-        g,
-        b,
-      ] = source.getPixel(x, y)
-      const [
-        l,
-        a,
-        bLab,
-      ] = rgbToLab(r, g, b)
-      // Convert to cv2-compatible range: L=[0,255], a=[0,255], b=[0,255]
-      const cvL = (l / 100) * 255
-      const cvA = (a + 128)
-      const cvB = (bLab + 128)
-      sourcePixels.push([cvL, cvA, cvB])
-    }
+  // Stats in cv2-compatible ranges: L -> [0,255], a/b -> value + 128
+  const srcL = planeStats(srcPlanes.l, 255 / 100, 0)
+  const srcA = planeStats(srcPlanes.a, 1, 128)
+  const srcB = planeStats(srcPlanes.b, 1, 128)
+  const tgtL = planeStats(tgtPlanes.l, 255 / 100, 0)
+  const tgtA = planeStats(tgtPlanes.a, 1, 128)
+  const tgtB = planeStats(tgtPlanes.b, 1, 128)
+
+  // Transform source planes in place: (v - srcMean) / srcStd * tgtStd + tgtMean
+  const lScale = tgtL.std / (srcL.std || 1)
+  const aScale = tgtA.std / (srcA.std || 1)
+  const bScale = tgtB.std / (srcB.std || 1)
+
+  for (let i = 0; i < srcPlanes.l.length; i++) {
+    const cvL = srcPlanes.l[i] * (255 / 100)
+    const cvA = srcPlanes.a[i] + 128
+    const cvB = srcPlanes.b[i] + 128
+
+    const newL = (cvL - srcL.mean) * lScale + tgtL.mean
+    const newA = (cvA - srcA.mean) * aScale + tgtA.mean
+    const newB = (cvB - srcB.mean) * bScale + tgtB.mean
+
+    srcPlanes.l[i] = newL * (100 / 255)
+    srcPlanes.a[i] = newA - 128
+    srcPlanes.b[i] = newB - 128
   }
 
-  for (let y = 0; y < target.height && y < source.height; y++) {
-    for (let x = 0; x < target.width && x < source.width; x++) {
-      const [
-        r,
-        g,
-        b,
-      ] = target.getPixel(x, y)
-      const [
-        l,
-        a,
-        bLab,
-      ] = rgbToLab(r, g, b)
-      // Convert to cv2-compatible range
-      const cvL = (l / 100) * 255
-      const cvA = (a + 128)
-      const cvB = (bLab + 128)
-      targetPixels.push([cvL, cvA, cvB])
-    }
-  }
+  const matched = new PixelImageData(
+    source.width,
+    source.height,
+    labPlanesToRgba(srcPlanes),
+  )
 
-  // Calculate mean and std for all channels combined (matching Python approach)
-  const sourceMean = calculateMeanStd(sourcePixels)
-  const targetMean = calculateMeanStd(targetPixels)
-
-  // Apply statistical matching (matching Python: (source - source_mean) / source_std * target_std + target_mean)
-  const result = source.clone()
-
-  let pixelIndex = 0
-  for (let y = 0; y < source.height; y++) {
-    for (let x = 0; x < source.width; x++) {
-      const [
-        l,
-        a_lab,
-        b_lab,
-      ] = sourcePixels[pixelIndex++]
-      const a = source.getPixel(x, y)[3]
-
-      // Apply statistical transformation
-      const normalizedL = (l - sourceMean.l.mean) / (sourceMean.l.std || 1)
-      const normalizedA = (a_lab - sourceMean.a.mean) / (sourceMean.a.std || 1)
-      const normalizedB = (b_lab - sourceMean.b.mean) / (sourceMean.b.std || 1)
-
-      const matchedL = normalizedL * targetMean.l.std + targetMean.l.mean
-      const matchedA = normalizedA * targetMean.a.std + targetMean.a.mean
-      const matchedB = normalizedB * targetMean.b.std + targetMean.b.mean
-
-      // Convert back from cv2 range to standard LAB range
-      const standardL = (matchedL / 255) * 100
-      const standardA = matchedA - 128
-      const standardBLab = matchedB - 128
-
-      const [
-        newR,
-        newG,
-        newB,
-      ] = labToRgb(standardL, standardA, standardBLab)
-      result.setPixel(x, y, [
-        Math.round(clamp(newR, 0, 255)),
-        Math.round(clamp(newG, 0, 255)),
-        Math.round(clamp(newB, 0, 255)),
-        a,
-      ])
-    }
-  }
-
-  // Apply improved multi-level wavelet color fix (matching Python implementation)
-  return improvedWaveletColorFix(result, target, level)
+  return improvedWaveletColorFix(matched, target, level)
 }
 
 /**
- * Calculate mean and standard deviation for LAB pixel arrays (matching Python implementation)
- */
-function calculateMeanStd(pixels: [number, number, number][]) {
-  const lValues = pixels.map(p => p[0])
-  const aValues = pixels.map(p => p[1])
-  const bValues = pixels.map(p => p[2])
-
-  return {
-    l: { mean: mean(lValues), std: standardDeviation(lValues) },
-    a: { mean: mean(aValues), std: standardDeviation(aValues) },
-    b: { mean: mean(bValues), std: standardDeviation(bValues) },
-  }
-}
-
-/**
- * Improved wavelet color correction matching Python implementation exactly
+ * Wavelet color correction: keep the source's high frequencies and the
+ * target's low frequencies, per RGB channel.
  */
 function improvedWaveletColorFix(source: PixelImageData, target: PixelImageData, level: number): PixelImageData {
-  // Step 1: Apply wavelet_colorfix to each channel separately (matching Python)
-  const result = new PixelImageData(source.width, source.height)
+  const width = source.width
+  const height = source.height
+  const n = width * height
+  const result = new PixelImageData(width, height)
+  const out = result.data
+  const srcData = source.data
+  const tgtData = target.data
 
-  // Process R, G, B channels separately (matching Python approach)
+  // Preserve alpha
+  for (let i = 0; i < n; i++) {
+    out[i * 4 + 3] = srcData[i * 4 + 3]
+  }
+
+  const srcChannel = new Float32Array(n)
+  const tgtChannel = new Float32Array(n)
+
   for (let channel = 0; channel < 3; channel++) {
-    // Extract source channel
-    const sourceChannel = new Float32Array(source.width * source.height)
-    for (let y = 0; y < source.height; y++) {
-      for (let x = 0; x < source.width; x++) {
-        sourceChannel[y * source.width + x] = source.getPixel(x, y)[channel]
+    for (let i = 0; i < n; i++) {
+      srcChannel[i] = srcData[i * 4 + channel]
+    }
+    // Target may have different dimensions; clamp-sample it onto the source grid
+    if (target.width === width && target.height === height) {
+      for (let i = 0; i < n; i++) {
+        tgtChannel[i] = tgtData[i * 4 + channel]
+      }
+    }
+    else {
+      for (let y = 0; y < height; y++) {
+        const ty = Math.min(y, target.height - 1)
+        for (let x = 0; x < width; x++) {
+          const tx = Math.min(x, target.width - 1)
+          tgtChannel[y * width + x] = tgtData[(ty * target.width + tx) * 4 + channel]
+        }
       }
     }
 
-    // Extract target channel
-    const targetChannel = new Float32Array(target.width * target.height)
-    for (let y = 0; y < target.height; y++) {
-      for (let x = 0; x < target.width; x++) {
-        targetChannel[y * target.width + x] = target.getPixel(x, y)[channel]
-      }
-    }
+    const sourceHigh = waveletDecomposition(srcChannel, width, height, level).high
+    const targetLow = waveletDecomposition(tgtChannel, width, height, level).low
 
-    // Apply wavelet decomposition to source (get high frequency)
-    const sourceHigh = waveletDecomposition(sourceChannel, source.width, source.height, level).high
-
-    // Apply wavelet decomposition to target (get low frequency)
-    const targetLow = waveletDecomposition(targetChannel, target.width, target.height, level).low
-
-    // Combine: output = inp_high + target_low (matching Python line 28)
-    for (let y = 0; y < source.height; y++) {
-      for (let x = 0; x < source.width; x++) {
-        const idx = y * source.width + x
-        const combined = sourceHigh[idx] + targetLow[idx]
-
-        if (channel === 0) {
-          // Initialize pixel for first channel
-          const a = source.getPixel(x, y)[3]
-          result.setPixel(x, y, [Math.round(clamp(combined, 0, 255)), 0, 0, a])
-        }
-        else {
-          // Update existing pixel
-          const [
-            r,
-            g,
-            b,
-            a,
-          ] = result.getPixel(x, y)
-          if (channel === 1) {
-            result.setPixel(x, y, [r, Math.round(clamp(combined, 0, 255)), b, a])
-          }
-          else {
-            result.setPixel(x, y, [r, g, Math.round(clamp(combined, 0, 255)), a])
-          }
-        }
-      }
+    for (let i = 0; i < n; i++) {
+      out[i * 4 + channel] = sourceHigh[i] + targetLow[i]
     }
   }
 
@@ -184,55 +124,66 @@ function improvedWaveletColorFix(source: PixelImageData, target: PixelImageData,
 }
 
 /**
- * Wavelet decomposition matching Python implementation exactly
+ * Multi-level wavelet decomposition via box-blur low-pass per level.
  */
 function waveletDecomposition(channel: Float32Array, width: number, height: number, levels: number): { high: Float32Array, low: Float32Array } {
-  const highFreq = new Float32Array(channel.length) // Initialize to zeros
-  let current = new Float32Array(channel) // Copy input
+  const highFreq = new Float32Array(channel.length)
+  let current: Float32Array = new Float32Array(channel)
 
-  // Multi-level decomposition (matching Python lines 34-38)
   for (let i = 1; i <= levels; i++) {
     const radius = 2 ** i
-    const lowFreq = simpleGaussianBlur(current, width, height, radius)
+    const lowFreq = boxBlurReplicate(current, width, height, radius)
 
-    // high_freq = high_freq + (inp - low_freq)
     for (let j = 0; j < channel.length; j++) {
-      highFreq[j] = highFreq[j] + (current[j] - lowFreq[j])
+      highFreq[j] += current[j] - lowFreq[j]
     }
 
-    current = lowFreq // inp = low_freq
+    current = lowFreq
   }
 
   return { high: highFreq, low: current }
 }
 
 /**
- * Simple Gaussian blur matching Python cv2.GaussianBlur behavior
+ * Separable running box blur with replicated borders — O(1) per pixel
+ * regardless of radius (each window always holds (2r+1)² samples, with
+ * edge samples repeated, matching clamp-based sampling).
  */
-function simpleGaussianBlur(channel: Float32Array, width: number, height: number, radius: number): Float32Array {
-  const result = new Float32Array(channel.length)
+function boxBlurReplicate(channel: Float32Array, width: number, height: number, radius: number): Float32Array {
+  const temp = new Float32Array(channel.length)
+  const out = new Float32Array(channel.length)
+  const window = 2 * radius + 1
 
-  // Simple box blur approximation (much simpler than full Gaussian)
+  // Horizontal pass
   for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let sum = 0
-      let count = 0
-
-      // Apply blur kernel
-      for (let ky = -radius; ky <= radius; ky++) {
-        for (let kx = -radius; kx <= radius; kx++) {
-          const nx = clamp(x + kx, 0, width - 1)
-          const ny = clamp(y + ky, 0, height - 1)
-          sum += channel[ny * width + nx]
-          count++
-        }
-      }
-
-      result[y * width + x] = sum / count
+    const row = y * width
+    let sum = 0
+    for (let x = -radius; x <= radius; x++) {
+      sum += channel[row + clamp(x, 0, width - 1)]
+    }
+    temp[row] = sum / window
+    for (let x = 1; x < width; x++) {
+      sum += channel[row + clamp(x + radius, 0, width - 1)]
+      sum -= channel[row + clamp(x - radius - 1, 0, width - 1)]
+      temp[row + x] = sum / window
     }
   }
 
-  return result
+  // Vertical pass
+  for (let x = 0; x < width; x++) {
+    let sum = 0
+    for (let y = -radius; y <= radius; y++) {
+      sum += temp[clamp(y, 0, height - 1) * width + x]
+    }
+    out[x] = sum / window
+    for (let y = 1; y < height; y++) {
+      sum += temp[clamp(y + radius, 0, height - 1) * width + x]
+      sum -= temp[clamp(y - radius - 1, 0, height - 1) * width + x]
+      out[y * width + x] = sum / window
+    }
+  }
+
+  return out
 }
 
 /**
@@ -244,30 +195,28 @@ export function colorStyling(
   contrast: number = 1,
 ): PixelImageData {
   const result = new PixelImageData(imageData.width, imageData.height)
+  const src = imageData.data
+  const dst = result.data
 
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [
-        r,
-        g,
-        b,
-        a,
-      ] = imageData.getPixel(x, y)
+  for (let p = 0; p < src.length; p += 4) {
+    const [
+      h,
+      s,
+      v,
+    ] = rgbToHsv(src[p], src[p + 1], src[p + 2])
 
-      const [h, s, v] = rgbToHsv(r, g, b)
+    const newS = clamp(s * saturation, 0, 1)
+    const newV = clamp(v * contrast - (contrast - 1) * 0.5, 0, 1)
 
-      // Apply saturation and contrast adjustments
-      const newS = clamp(s * saturation, 0, 1)
-      const newV = clamp(v * contrast - (contrast - 1) * 0.5, 0, 1)
-
-      const [
-        newR,
-        newG,
-        newB,
-      ] = hsvToRgb(h, newS, newV)
-
-      result.setPixel(x, y, [newR, newG, newB, a])
-    }
+    const [
+      r,
+      g,
+      b,
+    ] = hsvToRgb(h, newS, newV)
+    dst[p] = r
+    dst[p + 1] = g
+    dst[p + 2] = b
+    dst[p + 3] = src[p + 3]
   }
 
   return result

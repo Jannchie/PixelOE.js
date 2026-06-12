@@ -1,177 +1,98 @@
-/**
- * Fast optimized color matching for large images
- */
-import type { PixelImageData } from './imageData'
-import { labToRgb, rgbToLab } from './colorSpace'
 import { matchColor } from './color'
+/**
+ * Fast color matching for large images.
+ */
+import { PixelImageData } from './imageData'
+import { labStatTransfer, rgbaToLabPlanes } from './planes'
 
 /**
- * Fast color matching using sampling for large images
+ * Color matching that picks a strategy by image size: full wavelet
+ * matching for small images, sampled statistical transfer for large ones.
  */
 export function matchColorFast(source: PixelImageData, target: PixelImageData): PixelImageData {
-  // For very large images, use sampling to avoid performance issues
   const totalPixels = source.width * source.height
-  if (totalPixels > 500_000) { // ~707x707 pixels
-    console.log(`🚀 [ColorMatch] Using fast sampling mode for ${source.width}x${source.height} image`)
+  if (totalPixels > 500_000) {
     return fastSampledColorMatch(source, target)
   }
-
-  // For smaller images, use the full-quality wavelet color matching
-  console.log(`🎨 [ColorMatch] Using full-quality wavelet matching for ${source.width}x${source.height} image`)
   return matchColor(source, target)
 }
 
-/**
- * Fast sampled color matching for large images
- */
-function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): PixelImageData {
-  const result = source.clone()
-
-  // Sample a subset of pixels for statistics calculation
-  const sampleSize = Math.min(10_000, Math.floor(source.width * source.height / 100))
-  const sourcePixels: [number, number, number][] = []
-  const targetPixels: [number, number, number][] = []
-
-  // Random sampling instead of full scan
-  for (let i = 0; i < sampleSize; i++) {
-    const x = Math.floor(Math.random() * source.width)
-    const y = Math.floor(Math.random() * source.height)
-
-    const [
-      r,
-      g,
-      b,
-    ] = source.getPixel(x, y)
-    const [
-      l,
-      a,
-      bLab,
-    ] = rgbToLab(r, g, b)
-    sourcePixels.push([(l / 100) * 255, a + 128, bLab + 128])
-
-    const tx = Math.min(x, target.width - 1)
-    const ty = Math.min(y, target.height - 1)
-    const [
-      tr,
-      tg,
-      tb,
-    ] = target.getPixel(tx, ty)
-    const [
-      tl,
-      ta,
-      tbLab,
-    ] = rgbToLab(tr, tg, tb)
-    targetPixels.push([(tl / 100) * 255, ta + 128, tbLab + 128])
-  }
-
-  // Calculate statistics on samples
-  const sourceMean = [0, 0, 0]
-  const targetMean = [0, 0, 0]
-
-  for (const pixel of sourcePixels) {
-    sourceMean[0] += pixel[0]
-    sourceMean[1] += pixel[1]
-    sourceMean[2] += pixel[2]
-  }
-
-  for (const pixel of targetPixels) {
-    targetMean[0] += pixel[0]
-    targetMean[1] += pixel[1]
-    targetMean[2] += pixel[2]
-  }
-
-  sourceMean[0] /= sourcePixels.length
-  sourceMean[1] /= sourcePixels.length
-  sourceMean[2] /= sourcePixels.length
-
-  targetMean[0] /= targetPixels.length
-  targetMean[1] /= targetPixels.length
-  targetMean[2] /= targetPixels.length
-
-  // Calculate standard deviations
-  const sourceStd = [0, 0, 0]
-  const targetStd = [0, 0, 0]
-
-  for (const pixel of sourcePixels) {
-    sourceStd[0] += (pixel[0] - sourceMean[0]) ** 2
-    sourceStd[1] += (pixel[1] - sourceMean[1]) ** 2
-    sourceStd[2] += (pixel[2] - sourceMean[2]) ** 2
-  }
-
-  for (const pixel of targetPixels) {
-    targetStd[0] += (pixel[0] - targetMean[0]) ** 2
-    targetStd[1] += (pixel[1] - targetMean[1]) ** 2
-    targetStd[2] += (pixel[2] - targetMean[2]) ** 2
-  }
-
-  sourceStd[0] = Math.sqrt(sourceStd[0] / sourcePixels.length)
-  sourceStd[1] = Math.sqrt(sourceStd[1] / sourcePixels.length)
-  sourceStd[2] = Math.sqrt(sourceStd[2] / sourcePixels.length)
-
-  targetStd[0] = Math.sqrt(targetStd[0] / targetPixels.length)
-  targetStd[1] = Math.sqrt(targetStd[1] / targetPixels.length)
-  targetStd[2] = Math.sqrt(targetStd[2] / targetPixels.length)
-
-  // Apply transformation to all pixels
-  for (let y = 0; y < source.height; y++) {
-    for (let x = 0; x < source.width; x++) {
-      const [
-        r,
-        g,
-        b,
-        a,
-      ] = source.getPixel(x, y)
-      const [
-        l,
-        lab_a,
-        lab_b,
-      ] = rgbToLab(r, g, b)
-
-      // Convert to cv2 range
-      const cvL = (l / 100) * 255
-      const cvA = lab_a + 128
-      const cvB = lab_b + 128
-
-      // Apply statistical transformation
-      let newL = cvL
-      let newA = cvA
-      let newB = cvB
-
-      if (sourceStd[0] > 0) {
-        newL = ((cvL - sourceMean[0]) / sourceStd[0]) * targetStd[0] + targetMean[0]
-      }
-      if (sourceStd[1] > 0) {
-        newA = ((cvA - sourceMean[1]) / sourceStd[1]) * targetStd[1] + targetMean[1]
-      }
-      if (sourceStd[2] > 0) {
-        newB = ((cvB - sourceMean[2]) / sourceStd[2]) * targetStd[2] + targetMean[2]
-      }
-
-      // Clamp values
-      newL = Math.max(0, Math.min(255, newL))
-      newA = Math.max(0, Math.min(255, newA))
-      newB = Math.max(0, Math.min(255, newB))
-
-      // Convert back to RGB
-      const finalL = (newL / 255) * 100
-      const finalA = newA - 128
-      const finalB = newB - 128
-
-      const [
-        newR,
-        newG,
-        newB_rgb,
-      ] = labToRgb(finalL, finalA, finalB)
-      result.setPixel(x, y, [
-        Math.round(Math.max(0, Math.min(255, newR))),
-        Math.round(Math.max(0, Math.min(255, newG))),
-        Math.round(Math.max(0, Math.min(255, newB_rgb))),
-        a,
-      ])
-    }
-  }
-
-  return result
+interface LabStats {
+  mean: [number, number, number]
+  std: [number, number, number]
 }
 
+/**
+ * Deterministic grid-sampled Lab statistics (cv2-compatible ranges).
+ */
+function sampledStats(image: PixelImageData, sampleCount: number): LabStats {
+  const total = image.width * image.height
+  const step = Math.max(1, Math.floor(total / sampleCount))
 
+  // Collect samples into compact RGBA, then convert in one pass
+  const n = Math.floor((total - 1) / step) + 1
+  const samples = new Uint8ClampedArray(n * 4)
+  for (let i = 0, s = 0; i < total; i += step, s += 4) {
+    const p = i * 4
+    samples[s] = image.data[p]
+    samples[s + 1] = image.data[p + 1]
+    samples[s + 2] = image.data[p + 2]
+    samples[s + 3] = 255
+  }
+
+  const planes = rgbaToLabPlanes(samples, n, 1)
+  const mean: [number, number, number] = [0, 0, 0]
+  const std: [number, number, number] = [0, 0, 0]
+
+  for (let i = 0; i < n; i++) {
+    mean[0] += planes.l[i] * (255 / 100)
+    mean[1] += planes.a[i] + 128
+    mean[2] += planes.b[i] + 128
+  }
+  mean[0] /= n
+  mean[1] /= n
+  mean[2] /= n
+
+  for (let i = 0; i < n; i++) {
+    const dl = planes.l[i] * (255 / 100) - mean[0]
+    const da = planes.a[i] + 128 - mean[1]
+    const db = planes.b[i] + 128 - mean[2]
+    std[0] += dl * dl
+    std[1] += da * da
+    std[2] += db * db
+  }
+  std[0] = Math.sqrt(std[0] / n)
+  std[1] = Math.sqrt(std[1] / n)
+  std[2] = Math.sqrt(std[2] / n)
+
+  return { mean, std }
+}
+
+/**
+ * Statistical Lab transfer using sampled statistics, applied to every
+ * pixel in a single fused pass (no intermediate planes).
+ *
+ * The cv2-range transform `newCv = (cv - srcMean) * scale + tgtMean` is
+ * affine in native Lab units, so it folds into per-channel scale/offset:
+ * cvL = L * 2.55, cvA = a + 128, cvB = b + 128.
+ */
+function fastSampledColorMatch(source: PixelImageData, target: PixelImageData): PixelImageData {
+  const sampleCount = Math.min(10_000, Math.floor(source.width * source.height / 100))
+  const sourceStats = sampledStats(source, sampleCount)
+  const targetStats = sampledStats(target, sampleCount)
+
+  const lScale = sourceStats.std[0] > 0 ? targetStats.std[0] / sourceStats.std[0] : 1
+  const aScale = sourceStats.std[1] > 0 ? targetStats.std[1] / sourceStats.std[1] : 1
+  const bScale = sourceStats.std[2] > 0 ? targetStats.std[2] / sourceStats.std[2] : 1
+
+  const out = labStatTransfer(source.data, source.width, source.height, {
+    lScale,
+    lOffset: (targetStats.mean[0] - lScale * sourceStats.mean[0]) / 2.55,
+    aScale,
+    aOffset: aScale * (128 - sourceStats.mean[1]) + targetStats.mean[1] - 128,
+    bScale,
+    bOffset: bScale * (128 - sourceStats.mean[2]) + targetStats.mean[2] - 128,
+  })
+
+  return new PixelImageData(source.width, source.height, out)
+}

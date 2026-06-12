@@ -75,6 +75,7 @@ export class PixelImageData {
    * Convert to HTML Canvas ImageData
    */
   toCanvasImageData(): ImageData {
-    return new ImageData(this.data, this.width, this.height)
+    // Copy into a fresh ArrayBuffer-backed array to satisfy ImageDataArray typing
+    return new ImageData(new Uint8ClampedArray(this.data), this.width, this.height)
   }
 }

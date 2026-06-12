@@ -1,119 +1,118 @@
 import { sigmoid } from '../utils/math'
-import { calculateEdgeCoverage, createEdgeRegionMask, detectEdgesSobel } from './edgeDetection'
-import { calculateFastCombinedStats } from './fastStats'
 import { PixelImageData } from './imageData'
-import { convertToLuminance } from './luminance'
 import { dilate, dilateSmooth, erode, erodeSmooth } from './morphology'
+import { outlineHaloRows, processOutlineBand } from './outlineBand'
+import { rgbaToLabLuminance01, rgbaToLabLuminance01Strided } from './planes'
+import { quantize01ToU8, slidingMax, slidingMedianU8, slidingMin } from './slidingStats'
 
 /**
- * Outline expansion algorithms
+ * Outline expansion algorithms.
+ *
+ * The expansion weight is computed from exact per-pixel sliding-window
+ * statistics over the Lab L channel (matching the PyTorch reference,
+ * which uses `rgb_to_lab(img)[:, 0:1] / 100`).
  */
 
 /**
- * Calculate expansion weight map (matching Legacy implementation)
+ * Compute sigmoid weights from local statistics and min-max normalize.
  */
-/**
- * Ultra-fast combined statistics calculation
- */
-function calculateCombinedStatsFast(
-  imageData: PixelImageData,
-  patchSize: number,
-  medianPatchSize: number,
-  stride: number,
-): { median: Float32Array, max: Float32Array, min: Float32Array } {
-  const width = imageData.width
-  const height = imageData.height
-  const pixelCount = width * height
+function statsToNormalizedWeights(
+  medianU8: Uint8Array,
+  minStat: Float32Array,
+  maxStat: Float32Array,
+  avgScale: number,
+  distScale: number,
+): Float32Array {
+  const weights = new Float32Array(medianU8.length)
+  let minWeight = Infinity
+  let maxWeight = -Infinity
 
-  const median = new Float32Array(pixelCount)
-  const max = new Float32Array(pixelCount)
-  const min = new Float32Array(pixelCount)
-
-  // Pre-compute luminance once using shared utility
-  const grayData = convertToLuminance(imageData.data, 'rec601')
-
-  // Pre-allocate arrays
-  const maxPatchSize = medianPatchSize * medianPatchSize
-  const patchValues = new Float32Array(maxPatchSize)
-  const smallPatch = new Float32Array(patchSize * patchSize)
-
-  const halfPatch = Math.floor(patchSize / 2)
-  const halfMedianPatch = Math.floor(medianPatchSize / 2)
-
-  // Process in chunks with overlap
-  for (let y = 0; y < height; y += stride) {
-    for (let x = 0; x < width; x += stride) {
-      // Calculate median with larger patch
-      let medianPatchCount = 0
-      for (let py = y - halfMedianPatch; py <= y + halfMedianPatch; py++) {
-        for (let px = x - halfMedianPatch; px <= x + halfMedianPatch; px++) {
-          const clampedX = Math.max(0, Math.min(px, width - 1))
-          const clampedY = Math.max(0, Math.min(py, height - 1))
-
-        const grayVal = grayData[clampedY * width + clampedX]
-          patchValues[medianPatchCount++] = grayVal
-        }
-      }
-
-      // Calculate min/max with smaller patch AND collect values for faster median
-      let smallPatchCount = 0
-      let patchMin = 1
-      let patchMax = 0
-
-      for (let py = y - halfPatch; py <= y + halfPatch; py++) {
-        for (let px = x - halfPatch; px <= x + halfPatch; px++) {
-          const clampedX = Math.max(0, Math.min(px, width - 1))
-          const clampedY = Math.max(0, Math.min(py, height - 1))
-
-        const grayVal = grayData[clampedY * width + clampedX]
-
-          if (grayVal < patchMin) {
-            patchMin = grayVal
-          }
-          if (grayVal > patchMax) {
-            patchMax = grayVal
-          }
-          smallPatch[smallPatchCount++] = grayVal
-        }
-      }
-
-      // Fast median calculation - use smaller sample for speed
-      let medianValue
-      if (medianPatchCount > 100) {
-        // For large patches, use sampling for speed
-        const step = Math.floor(medianPatchCount / 50) // Sample ~50 values
-        const samples: number[] = []
-        for (let i = 0; i < medianPatchCount; i += step) {
-          samples.push(patchValues[i])
-        }
-        const sortedSamples = samples.toSorted((a, b) => a - b)
-        const mid = Math.floor(sortedSamples.length / 2)
-        medianValue = sortedSamples.length % 2 === 0
-          ? (sortedSamples[mid - 1] + sortedSamples[mid]) / 2
-          : sortedSamples[mid]
-      }
-      else {
-        // For smaller patches, use full calculation
-        const sorted = patchValues.subarray(0, medianPatchCount).toSorted((a, b) => a - b)
-        const mid = Math.floor(sorted.length / 2)
-        medianValue = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
-      }
-
-      // Fill result in stride x stride area
-      for (let dy = 0; dy < stride && y + dy < height; dy++) {
-        for (let dx = 0; dx < stride && x + dx < width; dx++) {
-          const idx = (y + dy) * width + (x + dx)
-          median[idx] = medianValue
-          max[idx] = patchMax
-          min[idx] = patchMin
-        }
-      }
+  for (let i = 0; i < weights.length; i++) {
+    const med = medianU8[i] / 255
+    const brightDist = maxStat[i] - med
+    const darkDist = med - minStat[i]
+    const w = sigmoid((med - 0.5) * avgScale - (brightDist - darkDist) * distScale)
+    weights[i] = w
+    if (w < minWeight) {
+      minWeight = w
+    }
+    if (w > maxWeight) {
+      maxWeight = w
     }
   }
 
-  return { median, max, min }
+  const range = maxWeight - minWeight
+  if (range > 0) {
+    const invRange = 1 / range
+    for (let i = 0; i < weights.length; i++) {
+      weights[i] = (weights[i] - minWeight) * invRange
+    }
+  }
+
+  return weights
 }
 
+/**
+ * Bilinear upsample of a strided field back to full resolution. Field
+ * sample (sx, sy) corresponds to full-res (sx*stride + stride>>1, ...).
+ */
+function bilinearUpsampleField(
+  field: Float32Array,
+  fieldWidth: number,
+  fieldHeight: number,
+  width: number,
+  height: number,
+  stride: number,
+): Float32Array {
+  const out = new Float32Array(width * height)
+  const offset = stride >> 1
+  const invStride = 1 / stride
+
+  for (let y = 0; y < height; y++) {
+    let fy = (y - offset) * invStride
+    if (fy < 0) {
+      fy = 0
+    }
+    else if (fy > fieldHeight - 1) {
+      fy = fieldHeight - 1
+    }
+    const y0 = Math.floor(fy)
+    const y1 = Math.min(fieldHeight - 1, y0 + 1)
+    const ty = fy - y0
+    const row0 = y0 * fieldWidth
+    const row1 = y1 * fieldWidth
+    const outRow = y * width
+
+    for (let x = 0; x < width; x++) {
+      let fx = (x - offset) * invStride
+      if (fx < 0) {
+        fx = 0
+      }
+      else if (fx > fieldWidth - 1) {
+        fx = fieldWidth - 1
+      }
+      const x0 = Math.floor(fx)
+      const x1 = Math.min(fieldWidth - 1, x0 + 1)
+      const tx = fx - x0
+
+      const top = field[row0 + x0] * (1 - tx) + field[row0 + x1] * tx
+      const bottom = field[row1 + x0] * (1 - tx) + field[row1 + x1] * tx
+      out[outRow + x] = top * (1 - ty) + bottom * ty
+    }
+  }
+
+  return out
+}
+
+/**
+ * Calculate expansion weight map.
+ *
+ * Statistics are computed on a stride-subsampled grid (matching the torch
+ * reference, which unfolds with `stride=k//2` and folds the strided stats
+ * back) and bilinearly upsampled to full resolution. With stride <= 1 the
+ * statistics are exact at every pixel: median over a (2*patchSize+1)²
+ * window, min/max over a (2*floor(patchSize/2)+1)² window.
+ */
 export function calculateExpansionWeight(
   imageData: PixelImageData,
   patchSize: number = 8,
@@ -121,142 +120,30 @@ export function calculateExpansionWeight(
   avgScale: number = 10,
   distScale: number = 3,
 ): Float32Array {
-  console.log(`🔍 Starting FAST weight calculation for ${imageData.width}x${imageData.height} image, patch=${patchSize}, stride=${stride}`)
-  const startTime = performance.now()
-
-  // Calculate all statistics in one pass
-  console.log('🔍 Calculating combined stats (median, max, min)...')
-  const stats = calculateCombinedStatsFast(imageData, patchSize, patchSize * 2, stride)
-
-  console.log('🔍 Computing final weights...')
-  // Calculate weight following Legacy logic
-  const weights = new Float32Array(imageData.width * imageData.height)
-
-  for (let i = 0; i < weights.length; i++) {
-    const brightDist = stats.max[i] - stats.median[i]
-    const darkDist = stats.median[i] - stats.min[i]
-
-    const weight = (stats.median[i] - 0.5) * avgScale - (brightDist - darkDist) * distScale
-    weights[i] = sigmoid(weight)
-  }
-
-  // Normalize weights (matching Legacy: (output - np.min(output)) / (np.max(output)))
-  let minWeight = weights[0]
-  let maxWeight = weights[0]
-
-  for (let i = 1; i < weights.length; i++) {
-    if (weights[i] < minWeight) {
-      minWeight = weights[i]
-    }
-    if (weights[i] > maxWeight) {
-      maxWeight = weights[i]
-    }
-  }
-
-  const range = maxWeight - minWeight
-  if (range > 0) {
-    for (let i = 0; i < weights.length; i++) {
-      weights[i] = (weights[i] - minWeight) / range
-    }
-  }
-
-  const endTime = performance.now()
-  console.log(`✅ FAST weight calculation completed in ${(endTime - startTime).toFixed(1)}ms`)
-
-  return weights
-}
-
-/**
- * Optimized weight calculation using edge-aware processing
- */
-export function calculateExpansionWeightOptimized(
-  imageData: PixelImageData,
-  patchSize: number = 8,
-  stride: number = 2,
-  avgScale: number = 10,
-  distScale: number = 3,
-  edgeThreshold: number = 0.1,
-): { weights: Float32Array, edgeCoverage: number } {
-  console.log(`🚀 Starting OPTIMIZED edge-aware weight calculation for ${imageData.width}x${imageData.height} image`)
-  const startTime = performance.now()
-
   const width = imageData.width
   const height = imageData.height
-  const pixelCount = width * height
+  const s = Math.max(1, Math.floor(stride))
 
-  // Step 1: Fast edge detection
-  const edgeStartTime = performance.now()
-  const { edgeMask } = detectEdgesSobel(imageData, edgeThreshold)
-  const edgeCoverage = calculateEdgeCoverage(edgeMask)
-  const edgeTime = performance.now() - edgeStartTime
-
-  console.log(`📊 Edge coverage: ${(edgeCoverage * 100).toFixed(1)}% (${edgeTime.toFixed(1)}ms)`)
-
-  // Create extended processing region around edges
-  const processingMask = createEdgeRegionMask(edgeMask, width, height, Math.ceil(patchSize / 2))
-
-  // Initialize weights with neutral values
-  const weights = new Float32Array(pixelCount)
-  weights.fill(0.5) // Neutral weight for non-edge areas
-
-  // Step 2: Only calculate detailed statistics for edge regions
-  const statsStartTime = performance.now()
-
-  // Count processing pixels
-  let processedPixels = 0
-  for (const element of processingMask) {
-    if (element > 0) {
-      processedPixels++
-    }
+  if (s === 1) {
+    const lum = rgbaToLabLuminance01(imageData.data, width, height)
+    const medianU8 = slidingMedianU8(quantize01ToU8(lum), width, height, patchSize)
+    const minMaxRadius = Math.floor(patchSize / 2)
+    const minStat = slidingMin(lum, width, height, minMaxRadius)
+    const maxStat = slidingMax(lum, width, height, minMaxRadius)
+    return statsToNormalizedWeights(medianU8, minStat, maxStat, avgScale, distScale)
   }
 
-  console.log(`🎯 Processing ${processedPixels} pixels (${(processedPixels / pixelCount * 100).toFixed(1)}% of image)`)
+  const { field, fieldWidth, fieldHeight } = rgbaToLabLuminance01Strided(imageData.data, width, height, s)
 
-  // Calculate statistics only for edge regions with optimized approach
-  const stats = calculateFastCombinedStats(imageData, patchSize, patchSize * 2, stride, processingMask)
-  const statsTime = performance.now() - statsStartTime
+  const medianRadius = Math.max(1, Math.round(patchSize / s))
+  const minMaxRadius = Math.max(1, Math.round(Math.floor(patchSize / 2) / s))
 
-  // Step 3: Calculate weights for edge regions only
-  const weightStartTime = performance.now()
-  for (let i = 0; i < weights.length; i++) {
-    if (processingMask[i] > 0 && stats.median[i] !== undefined) {
-      const brightDist = stats.max[i] - stats.median[i]
-      const darkDist = stats.median[i] - stats.min[i]
-      const weight = (stats.median[i] - 0.5) * avgScale - (brightDist - darkDist) * distScale
-      weights[i] = sigmoid(weight)
-    }
-  }
+  const medianU8 = slidingMedianU8(quantize01ToU8(field), fieldWidth, fieldHeight, medianRadius)
+  const minStat = slidingMin(field, fieldWidth, fieldHeight, minMaxRadius)
+  const maxStat = slidingMax(field, fieldWidth, fieldHeight, minMaxRadius)
 
-  // Normalize weights in edge regions only
-  let minWeight = Infinity
-  let maxWeight = -Infinity
-  for (const [i, weight] of weights.entries()) {
-    if (processingMask[i] > 0) {
-      if (weight < minWeight) {
-        minWeight = weight
-      }
-      if (weight > maxWeight) {
-        maxWeight = weight
-      }
-    }
-  }
-
-  const range = maxWeight - minWeight
-  if (range > 0) {
-    for (let i = 0; i < weights.length; i++) {
-      if (processingMask[i] > 0) {
-        weights[i] = (weights[i] - minWeight) / range
-      }
-    }
-  }
-
-  const weightTime = performance.now() - weightStartTime
-  const totalTime = performance.now() - startTime
-
-  console.log(`✅ Optimized weight calculation: ${totalTime.toFixed(1)}ms (edge: ${edgeTime.toFixed(1)}ms, stats: ${statsTime.toFixed(1)}ms, weights: ${weightTime.toFixed(1)}ms)`)
-  console.log(`⚡ Speedup: ${(processedPixels / pixelCount < 0.5 ? '2-3x' : '1.5x')} estimated`)
-
-  return { weights, edgeCoverage }
+  const small = statsToNormalizedWeights(medianU8, minStat, maxStat, avgScale, distScale)
+  return bilinearUpsampleField(small, fieldWidth, fieldHeight, width, height, s)
 }
 
 /**
@@ -264,19 +151,17 @@ export function calculateExpansionWeightOptimized(
  */
 function calculateOrigWeight(weights: Float32Array): Float32Array {
   const origWeights = new Float32Array(weights.length)
-
-  for (const [i, weight] of weights.entries()) {
+  // Indexed loop on purpose: TypedArray.entries() allocates per element.
+  // eslint-disable-next-line unicorn/no-for-loop
+  for (let i = 0; i < weights.length; i++) {
     // orig_weight = sigmoid((weight - 0.5) * 5) * 0.25
-    const sigmoidInput = (weight - 0.5) * 5
-    const sigmoidOutput = sigmoid(sigmoidInput)
-    origWeights[i] = sigmoidOutput * 0.25
+    origWeights[i] = sigmoid((weights[i] - 0.5) * 5) * 0.25
   }
-
   return origWeights
 }
 
 /**
- * Apply three-way weighted blend (erode, dilate, original) - matching Legacy logic
+ * Three-way weighted blend (eroded, dilated, original) on flat buffers.
  */
 function threewayBlend(
   eroded: PixelImageData,
@@ -285,58 +170,42 @@ function threewayBlend(
   weights: Float32Array,
   origWeights: Float32Array,
 ): PixelImageData {
-  const result = new PixelImageData(original.width, original.height)
+  const e = eroded.data
+  const d = dilated.data
+  const o = original.data
+  const out = new Uint8ClampedArray(o.length)
 
-  for (let y = 0; y < original.height; y++) {
-    for (let x = 0; x < original.width; x++) {
-      const weight = weights[y * original.width + x]
-      const origWeight = origWeights[y * original.width + x]
-
-      const [
-        re,
-        ge,
-        be,
-        ae,
-      ] = eroded.getPixel(x, y)
-      const [
-        rd,
-        gd,
-        bd,
-        ad,
-      ] = dilated.getPixel(x, y)
-      const [
-        ro,
-        go,
-        bo,
-        ao,
-      ] = original.getPixel(x, y)
-
-      // First blend: eroded * weight + dilated * (1 - weight)
-      const r1 = re * weight + rd * (1 - weight)
-      const g1 = ge * weight + gd * (1 - weight)
-      const b1 = be * weight + bd * (1 - weight)
-      const a1 = ae * weight + ad * (1 - weight)
-
-      // Second blend: output = first_blend * (1 - orig_weight) + original * orig_weight
-      const r = r1 * (1 - origWeight) + ro * origWeight
-      const g = g1 * (1 - origWeight) + go * origWeight
-      const b = b1 * (1 - origWeight) + bo * origWeight
-      const a = a1 * (1 - origWeight) + ao * origWeight
-
-      result.setPixel(x, y, [
-        Math.round(Math.max(0, Math.min(255, r))),
-        Math.round(Math.max(0, Math.min(255, g))),
-        Math.round(Math.max(0, Math.min(255, b))),
-        Math.round(Math.max(0, Math.min(255, a))),
-      ])
+  for (let i = 0, p = 0; i < weights.length; i++, p += 4) {
+    const w = weights[i]
+    const ow = origWeights[i]
+    const morphW = 1 - ow
+    for (let c = 0; c < 4; c++) {
+      const blended = e[p + c] * w + d[p + c] * (1 - w)
+      out[p + c] = blended * morphW + o[p + c] * ow
     }
   }
 
-  return result
+  return new PixelImageData(original.width, original.height, out)
 }
 
 /**
- * Main outline expansion function (matching Legacy implementation exactly)
+ * Post-process weights for display/return: |w*2 - 1| dilated by a
+ * (2*iters+1)² max window (equivalent to iterating a 3x3 dilation).
+ */
+function processReturnWeights(weights: Float32Array, width: number, height: number, dilateIters: number): Float32Array {
+  const folded = new Float32Array(weights.length)
+  // Indexed loop on purpose: TypedArray.entries() allocates per element.
+  // eslint-disable-next-line unicorn/no-for-loop
+  for (let i = 0; i < weights.length; i++) {
+    folded[i] = Math.abs(weights[i] * 2 - 1)
+  }
+  return slidingMax(folded, width, height, dilateIters)
+}
+
+/**
+ * Legacy outline expansion (matching the original numpy implementation):
+ * iterated 3x3 box morphology, three-way blend with original image, and a
+ * smoothing open/close sequence with the cross kernel.
  */
 export function outlineExpansion(
   imageData: PixelImageData,
@@ -346,58 +215,33 @@ export function outlineExpansion(
   avgScale: number = 10,
   distScale: number = 3,
 ): { result: PixelImageData, weights: Float32Array } {
-  // Step 1: Calculate expansion weights (k, stride, avg_scale, dist_scale)
   const weights = calculateExpansionWeight(imageData, patchSize, Math.floor(patchSize / 4) * 2, avgScale, distScale)
-
-  // Step 2: Calculate orig_weight = sigmoid((weight - 0.5) * 5) * 0.25
   const origWeights = calculateOrigWeight(weights)
 
-  // Step 3: Apply proper morphological operations
   const imgErode = erode(imageData, erodeIters)
   const imgDilate = dilate(imageData, dilateIters)
 
-  // Step 4: Three-way weighted blend
   let result = threewayBlend(imgErode, imgDilate, imageData, weights, origWeights)
 
-  // Step 5: Second round of morphological operations with smoothing kernel
-  // output = cv2.erode(output, kernel_smoothing, iterations=erode)
   result = erodeSmooth(result, erodeIters)
-  // output = cv2.dilate(output, kernel_smoothing, iterations=dilate * 2)
   result = dilateSmooth(result, dilateIters * 2)
-  // output = cv2.erode(output, kernel_smoothing, iterations=erode)
   result = erodeSmooth(result, erodeIters)
 
-  // Step 6: Process weights for return (matching Legacy: weight = np.abs(weight * 2 - 1) * 255)
-  const finalWeights = new Float32Array(weights.length)
-  for (const [i, weight] of weights.entries()) {
-    finalWeights[i] = Math.abs(weight * 2 - 1)
+  return {
+    result,
+    weights: processReturnWeights(weights, imageData.width, imageData.height, dilateIters),
   }
-
-  // Apply dilation to weights (matching Legacy: weight = cv2.dilate(weight.astype(np.uint8), kernel_expansion, iterations=dilate))
-  const weightImage = new PixelImageData(imageData.width, imageData.height)
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const weightValue = Math.round(finalWeights[y * imageData.width + x] * 255)
-      weightImage.setPixel(x, y, [weightValue, weightValue, weightValue, 255])
-    }
-  }
-
-  const dilatedWeightImage = dilate(weightImage, dilateIters)
-
-  // Extract back to Float32Array
-  const processedWeights = new Float32Array(weights.length)
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [weightValue] = dilatedWeightImage.getPixel(x, y)
-      processedWeights[y * imageData.width + x] = weightValue / 255
-    }
-  }
-
-  return { result, weights: processedWeights }
 }
 
 /**
- * Optimized outline expansion with edge-aware processing
+ * Outline expansion matching the PyTorch reference pipeline: a single pass
+ * of continuous circle-kernel morphology sized by the iteration count,
+ * two-way blend, then an open/close sequence with a smaller circle kernel.
+ *
+ * The `edgeThreshold` parameter is kept for API compatibility and ignored.
+ * Pass `useOptimization: false` to fall back to the legacy algorithm.
+ * `computeReturnWeights: false` skips the display-weight post-processing
+ * (a full-resolution dilation) and returns the raw weight field instead.
  */
 export function outlineExpansionOptimized(
   imageData: PixelImageData,
@@ -406,87 +250,180 @@ export function outlineExpansionOptimized(
   patchSize: number = 16,
   avgScale: number = 10,
   distScale: number = 3,
-  edgeThreshold: number = 0.1,
+  _edgeThreshold: number = 0.1,
   useOptimization: boolean = true,
+  computeReturnWeights: boolean = true,
 ): { result: PixelImageData, weights: Float32Array, edgeCoverage?: number } {
-  console.log(`🚀 Starting ${useOptimization ? 'OPTIMIZED' : 'STANDARD'} outline expansion`)
-
   if (!useOptimization) {
-    // Fall back to standard algorithm
     return outlineExpansion(imageData, erodeIters, dilateIters, patchSize, avgScale, distScale)
   }
 
-  const totalStartTime = performance.now()
+  const weights = calculateExpansionWeight(imageData, patchSize, Math.floor(patchSize / 4) * 2, avgScale, distScale)
 
-  // Step 1: Calculate optimized expansion weights using edge detection
-  const { weights, edgeCoverage } = calculateExpansionWeightOptimized(
-    imageData,
-    patchSize,
-    Math.floor(patchSize / 4) * 2,
-    avgScale,
-    distScale,
-    edgeThreshold,
+  const result = new PixelImageData(
+    imageData.width,
+    imageData.height,
+    processOutlineBand(imageData.data, imageData.width, imageData.height, weights, erodeIters, dilateIters, 0, 0),
   )
 
-  // Determine if optimization is worth it based on edge coverage
-  if (edgeCoverage > 0.7) {
-    console.log(`📊 High edge coverage (${(edgeCoverage * 100).toFixed(1)}%), using standard algorithm`)
-    const standardResult = outlineExpansion(imageData, erodeIters, dilateIters, patchSize, avgScale, distScale)
-    return { ...standardResult, edgeCoverage }
+  return {
+    result,
+    weights: computeReturnWeights
+      ? processReturnWeights(weights, imageData.width, imageData.height, dilateIters)
+      : weights,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Worker-parallel variant
+// ---------------------------------------------------------------------------
+
+interface OutlineBandResponse {
+  id: number
+  out: ArrayBuffer
+}
+
+let workerPool: Worker[] | null | undefined
+let nextJobId = 0
+const pendingJobs = new Map<number, (out: ArrayBuffer) => void>()
+
+function getWorkerPool(): Worker[] | null {
+  if (workerPool !== undefined) {
+    return workerPool
   }
 
-  console.log(`⚡ Using optimized processing for ${(edgeCoverage * 100).toFixed(1)}% edge coverage`)
-
-  // Step 2: Calculate orig_weight = sigmoid((weight - 0.5) * 5) * 0.25
-  const origWeights = calculateOrigWeight(weights)
-
-  // Step 3: Apply morphological operations (same as original)
-  const morphStartTime = performance.now()
-  const imgErode = erode(imageData, erodeIters)
-  const imgDilate = dilate(imageData, dilateIters)
-  const morphTime = performance.now() - morphStartTime
-
-  // Step 4: Three-way weighted blend
-  const blendStartTime = performance.now()
-  let result = threewayBlend(imgErode, imgDilate, imageData, weights, origWeights)
-  const blendTime = performance.now() - blendStartTime
-
-  // Step 5: Second round of morphological operations with smoothing
-  const smoothStartTime = performance.now()
-  result = erodeSmooth(result, erodeIters)
-  result = dilateSmooth(result, dilateIters * 2)
-  result = erodeSmooth(result, erodeIters)
-  const smoothTime = performance.now() - smoothStartTime
-
-  // Step 6: Process weights for return
-  const finalWeights = new Float32Array(weights.length)
-  for (const [i, weight] of weights.entries()) {
-    finalWeights[i] = Math.abs(weight * 2 - 1)
+  workerPool = null
+  if (typeof Worker === 'undefined') {
+    return workerPool
   }
 
-  // Apply dilation to weights
-  const weightImage = new PixelImageData(imageData.width, imageData.height)
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const weightValue = Math.round(finalWeights[y * imageData.width + x] * 255)
-      weightImage.setPixel(x, y, [weightValue, weightValue, weightValue, 255])
-    }
+  const cores = globalThis.navigator?.hardwareConcurrency ?? 4
+  const count = Math.min(8, Math.max(1, cores - 1))
+  if (count <= 1) {
+    return workerPool
   }
 
-  const dilatedWeightImage = dilate(weightImage, dilateIters)
-
-  // Extract back to Float32Array
-  const processedWeights = new Float32Array(weights.length)
-  for (let y = 0; y < imageData.height; y++) {
-    for (let x = 0; x < imageData.width; x++) {
-      const [weightValue] = dilatedWeightImage.getPixel(x, y)
-      processedWeights[y * imageData.width + x] = weightValue / 255
-    }
+  try {
+    workerPool = Array.from({ length: count }, () => {
+      const worker = new Worker(new URL('../workers/outline.worker.ts', import.meta.url), { type: 'module' })
+      worker.addEventListener('message', (event: MessageEvent<OutlineBandResponse>) => {
+        const { id, out } = event.data
+        const resolve = pendingJobs.get(id)
+        if (resolve) {
+          pendingJobs.delete(id)
+          resolve(out)
+        }
+      })
+      return worker
+    })
+  }
+  catch {
+    workerPool = null
   }
 
-  const totalTime = performance.now() - totalStartTime
-  console.log(`✅ Optimized outline expansion completed in ${totalTime.toFixed(1)}ms`)
-  console.log(`⏱️  Breakdown: morph: ${morphTime.toFixed(1)}ms, blend: ${blendTime.toFixed(1)}ms, smooth: ${smoothTime.toFixed(1)}ms`)
+  return workerPool
+}
 
-  return { result, weights: processedWeights, edgeCoverage }
+function runBandOnWorker(
+  worker: Worker,
+  src: Uint8ClampedArray,
+  weights: Float32Array,
+  width: number,
+  rows: number,
+  erodeIters: number,
+  dilateIters: number,
+  trimTop: number,
+  trimBottom: number,
+): Promise<Uint8ClampedArray> {
+  return new Promise((resolve) => {
+    const id = nextJobId++
+    pendingJobs.set(id, out => resolve(new Uint8ClampedArray(out)))
+    worker.postMessage(
+      { id, src: src.buffer, weights: weights.buffer, width, rows, erodeIters, dilateIters, trimTop, trimBottom },
+      [src.buffer, weights.buffer],
+    )
+  })
+}
+
+/**
+ * Async outline expansion: identical output to
+ * {@link outlineExpansionOptimized}, but the morphology chain is split into
+ * horizontal bands (with halo rows) and processed concurrently on a Web
+ * Worker pool. Falls back to the synchronous path when Workers are
+ * unavailable (e.g. Node) or the image is small.
+ */
+export async function outlineExpansionOptimizedAsync(
+  imageData: PixelImageData,
+  erodeIters: number = 2,
+  dilateIters: number = 2,
+  patchSize: number = 16,
+  avgScale: number = 10,
+  distScale: number = 3,
+  edgeThreshold: number = 0.1,
+  useOptimization: boolean = true,
+  computeReturnWeights: boolean = true,
+): Promise<{ result: PixelImageData, weights: Float32Array, edgeCoverage?: number }> {
+  const { width, height } = imageData
+  const pool = useOptimization && width * height >= 500_000 ? getWorkerPool() : null
+
+  if (!pool) {
+    return outlineExpansionOptimized(
+      imageData,
+      erodeIters,
+      dilateIters,
+      patchSize,
+      avgScale,
+      distScale,
+      edgeThreshold,
+      useOptimization,
+      computeReturnWeights,
+    )
+  }
+
+  const weights = calculateExpansionWeight(imageData, patchSize, Math.floor(patchSize / 4) * 2, avgScale, distScale)
+
+  const halo = outlineHaloRows(erodeIters, dilateIters)
+  const bandCount = Math.min(pool.length, Math.max(1, Math.floor(height / Math.max(32, halo * 4))))
+
+  const jobs: Promise<Uint8ClampedArray>[] = []
+  const bandStarts: number[] = []
+
+  for (let band = 0; band < bandCount; band++) {
+    const y0 = Math.floor(band * height / bandCount)
+    const y1 = Math.floor((band + 1) * height / bandCount)
+    const top = Math.max(0, y0 - halo)
+    const bottom = Math.min(height, y1 + halo)
+    const rows = bottom - top
+
+    // slice() copies, so each band owns transferable buffers
+    const srcSlice = imageData.data.slice(top * width * 4, bottom * width * 4)
+    const weightsSlice = weights.slice(top * width, bottom * width)
+
+    bandStarts.push(y0)
+    jobs.push(runBandOnWorker(
+      pool[band % pool.length],
+      srcSlice,
+      weightsSlice,
+      width,
+      rows,
+      erodeIters,
+      dilateIters,
+      y0 - top,
+      bottom - y1,
+    ))
+  }
+
+  const bandResults = await Promise.all(jobs)
+
+  const out = new Uint8ClampedArray(width * height * 4)
+  for (const [band, bandData] of bandResults.entries()) {
+    out.set(bandData, bandStarts[band] * width * 4)
+  }
+
+  return {
+    result: new PixelImageData(width, height, out),
+    weights: computeReturnWeights
+      ? processReturnWeights(weights, width, height, dilateIters)
+      : weights,
+  }
 }

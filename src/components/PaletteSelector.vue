@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { ColorPalette } from '../core/palettes'
-import Button from 'primevue/button'
-import Dropdown from 'primevue/dropdown'
-import InputSwitch from 'primevue/inputswitch'
-import { computed } from 'vue'
+import { computed, toRaw } from 'vue'
 import { PREDEFINED_PALETTES, rgbToHex } from '../core/palettes'
+import WfChip from './ui/WfChip.vue'
+import WfSelect from './ui/WfSelect.vue'
+import WfSwitch from './ui/WfSwitch.vue'
 
 interface Props {
   selectedPalette?: ColorPalette | null | undefined
@@ -26,125 +26,166 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
-// Computed properties for two-way binding
-const selectedPalette = computed({
-  get: () => props.selectedPalette,
-  set: value => emit('update:selectedPalette', value),
-})
-
-const usePalette = computed({
-  get: () => props.usePalette,
-  set: value => emit('update:usePalette', value),
-})
-
-const ditherMethod = computed({
-  get: () => props.ditherMethod,
-  set: value => emit('update:ditherMethod', value),
-})
-
-// Available palettes for dropdown
-const paletteOptions = PREDEFINED_PALETTES.map(palette => ({
-  label: `${palette.name} (${palette.colors.length} colors)`,
-  value: palette,
+const paletteOptions = PREDEFINED_PALETTES.map(p => ({
+  label: `${p.name} [${p.colors.length}]`,
+  value: p,
 }))
 
-// Dithering options
-const ditherOptions = [
-  { label: 'None', value: 'none' },
-  { label: 'Ordered Dithering', value: 'ordered' },
-  { label: 'Error Diffusion', value: 'error_diffusion' },
-]
-
-// Preview colors for current palette (max 16 colors for display)
 const previewColors = computed(() => {
-  if (!selectedPalette.value) {
+  if (!props.selectedPalette) {
     return []
   }
-
-  const colors = selectedPalette.value.colors.slice(0, 16)
-  return colors.map(color => rgbToHex(color[0], color[1], color[2]))
+  return props.selectedPalette.colors.slice(0, 20).map(c => rgbToHex(c[0], c[1], c[2]))
 })
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- Enable Palette Toggle -->
-    <div class="flex items-center justify-between">
-      <div>
-        <label class="text-sm text-gray-700 font-medium block">Use Color Palette</label>
-        <p class="text-xs text-gray-500 mt-1">
-          Constrain colors to a predefined palette
-        </p>
-      </div>
-      <InputSwitch
-        v-model="usePalette"
-      />
-    </div>
+  <div class="palette">
+    <WfSwitch
+      :model-value="usePalette"
+      label="Use Color Palette"
+      description="Constrain colors to a predefined palette"
+      @update:model-value="emit('update:usePalette', $event)"
+    />
 
-    <!-- Palette Selection (only show when enabled) -->
-    <div v-if="usePalette" class="space-y-4">
-      <!-- Palette Dropdown -->
-      <div>
-        <label class="text-sm text-gray-700 font-medium mb-2 block">Palette</label>
-        <Dropdown
-          v-model="selectedPalette"
+    <template v-if="usePalette">
+      <div class="palette__select">
+        <span class="palette__label">Palette</span>
+        <WfSelect
+          :model-value="selectedPalette ? toRaw(selectedPalette) : selectedPalette"
           :options="paletteOptions"
-          option-label="label"
-          option-value="value"
-          placeholder="Select a palette"
-          class="w-full"
+          placeholder="Select a palette..."
+          @update:model-value="emit('update:selectedPalette', $event)"
         />
       </div>
 
-      <!-- Palette Preview -->
-      <div v-if="selectedPalette" class="space-y-2">
-        <div class="flex items-center justify-between">
-          <label class="text-sm text-gray-700 font-medium">Preview</label>
-          <span class="text-xs text-gray-500">
-            {{ selectedPalette.colors.length }} colors total
-          </span>
+      <div v-if="selectedPalette" class="palette__preview">
+        <div class="palette__preview-header">
+          <span>{{ selectedPalette.colors.length }} colors</span>
         </div>
-        <div class="p-2 border border-gray-200 bg-gray-50 flex flex-wrap gap-1">
-          <div
-            v-for="(color, index) in previewColors"
-            :key="index"
-            class="border border-gray-300 h-6 w-6 shadow-sm"
-            :style="{ backgroundColor: color }"
+        <div class="palette__swatches">
+          <span
+            v-for="(color, i) in previewColors"
+            :key="i"
+            class="palette__swatch"
+            :style="{ background: color }"
             :title="color"
           />
-          <div
-            v-if="selectedPalette.colors.length > 16"
-            class="text-xs text-gray-500 px-2 border border-gray-300 bg-gray-100 flex h-6 items-center"
+          <span
+            v-if="selectedPalette.colors.length > 20"
+            class="palette__overflow"
           >
-            +{{ selectedPalette.colors.length - 16 }}
-          </div>
+            +{{ selectedPalette.colors.length - 20 }}
+          </span>
         </div>
-        <p class="text-xs text-gray-500">
+        <p v-if="selectedPalette.description" class="palette__desc">
           {{ selectedPalette.description }}
         </p>
       </div>
 
-      <!-- Dithering Method (only show when palette is selected) -->
-      <div v-if="selectedPalette">
-        <label class="text-sm text-gray-700 font-medium mb-2 block">Dithering</label>
-        <div class="gap-2 grid grid-cols-3">
-          <Button
-            v-for="option in ditherOptions"
-            :key="option.value"
-            :label="option.label"
-            class="text-xs" :class="[
-              ditherMethod === option.value
-                ? 'p-button-primary'
-                : 'p-button-outlined',
-            ]"
-            size="small"
-            @click="ditherMethod = option.value as typeof ditherMethod"
-          />
+      <div v-if="selectedPalette" class="palette__dither">
+        <span class="palette__label">Dithering</span>
+        <div class="palette__chips">
+          <WfChip
+            :active="ditherMethod === 'none'"
+            @click="emit('update:ditherMethod', 'none')"
+          >
+            none
+          </WfChip>
+          <WfChip
+            :active="ditherMethod === 'ordered'"
+            @click="emit('update:ditherMethod', 'ordered')"
+          >
+            ordered
+          </WfChip>
+          <WfChip
+            :active="ditherMethod === 'error_diffusion'"
+            @click="emit('update:ditherMethod', 'error_diffusion')"
+          >
+            diffusion
+          </WfChip>
         </div>
-        <p class="text-xs text-gray-500 mt-2">
-          Dithering helps create smooth gradients with limited colors
-        </p>
       </div>
-    </div>
+    </template>
   </div>
 </template>
+
+<style scoped>
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.palette__select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.palette__preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.palette__preview-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.palette__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.palette__swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.palette__overflow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+}
+
+.palette__desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.palette__dither {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette__chips {
+  display: flex;
+  gap: 6px;
+}
+</style>

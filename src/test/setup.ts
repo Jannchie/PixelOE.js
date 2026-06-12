@@ -3,9 +3,8 @@
 
 // Type declarations for global variables
 declare global {
-  interface GlobalThis {
-    gc?: () => void
-  }
+  // eslint-disable-next-line vars-on-top
+  var gc: (() => void) | undefined
 }
 
 // Enable performance measurements

@@ -1,89 +1,55 @@
 <script setup lang="ts">
-import type { ColorPalette } from '../core/palettes'
+import type { PixelOEPreset } from '../core/presets'
 import type { PixelImageData, PixelOEOptions } from '../index'
-import Button from 'primevue/button'
-import Dropdown from 'primevue/dropdown'
-import FileUpload from 'primevue/fileupload'
-import InputSwitch from 'primevue/inputswitch'
-import ProgressSpinner from 'primevue/progressspinner'
-import Slider from 'primevue/slider'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { BASE_OPTIONS } from '../core/presets'
 import { PixelOE } from '../index'
 import PaletteSelector from './PaletteSelector.vue'
+import PresetGallery from './PresetGallery.vue'
+import WfButton from './ui/WfButton.vue'
+import WfDropZone from './ui/WfDropZone.vue'
 
-// Reactive state
+import WfSelect from './ui/WfSelect.vue'
+import WfSlider from './ui/WfSlider.vue'
+import WfSwitch from './ui/WfSwitch.vue'
+
 const originalCanvas = ref<HTMLCanvasElement>()
 const resultCanvas = ref<HTMLCanvasElement>()
-
 const originalImage = ref<PixelImageData | null>(null)
 const resultImage = ref<PixelImageData | null>(null)
 const processing = ref(false)
-const showSettings = ref(false)
+
 const showingOriginal = ref(false)
-const processingTime = ref<number>(0)
-const lastEdgeCoverage = ref<number>(0)
+const processingTime = ref(0)
 
-const options = reactive<PixelOEOptions>({
-  pixelSize: 8,
-  thickness: 2,
-  targetSize: 256,
-  mode: 'contrast',
-  colorMatching: true,
-  contrast: 1,
-  saturation: 1,
-  noUpscale: false,
-  noDownscale: false,
+const sidebarTab = ref<'presets' | 'settings'>('presets')
+const activePresetId = ref<string | null>('default')
 
-  // Palette options
-  usePalette: false,
-  selectedPalette: undefined as ColorPalette | undefined,
-  ditherMethod: 'none' as 'none' | 'ordered' | 'error_diffusion',
+const options = reactive<PixelOEOptions>({ ...BASE_OPTIONS })
 
-  // Advanced edge expansion options
-  edgeExpansionMode: 'optimized' as 'legacy' | 'optimized',
-  edgeDetectionThreshold: 0.1,
-  useEdgeOptimization: true,
-  adaptiveProcessing: true,
-})
-
-// Dropdown options
 const edgeExpansionModes = [
-  { label: 'Legacy (Original)', value: 'legacy', description: 'Original algorithm, highest quality but slower' },
-  { label: 'Optimized (Recommended)', value: 'optimized', description: 'Edge-aware processing, balanced speed and quality' },
+  { label: 'Legacy', value: 'legacy' },
+  { label: 'Circle (PyTorch)', value: 'optimized' },
 ]
 
 const processingModes = [
   { label: 'Contrast', value: 'contrast' },
 ]
 
-// Create PixelOE instance
 let pixelOE: PixelOE
-
-// Store the paste handler for cleanup
 let pasteHandler: ((event: ClipboardEvent) => void) | null = null
 
 onMounted(() => {
   pixelOE = new PixelOE(options)
-
-  // Add paste event listener
   pasteHandler = (event: ClipboardEvent) => {
-    const items = event.clipboardData?.items
-    if (!items) {
-      return
-    }
-
-    // eslint-disable-next-line unicorn/prefer-spread
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile()
-        if (file) {
-          handlePastedImage(file)
-        }
-        break
+    const item = event.clipboardData?.items?.[0]
+    if (item?.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) {
+        handleFile(file)
       }
     }
   }
-
   document.addEventListener('paste', pasteHandler)
 })
 
@@ -93,512 +59,277 @@ onUnmounted(() => {
   }
 })
 
-// Event handlers
-async function handleFileSelect(event: any) {
-  const files = event.files
-  if (!files || files.length === 0) {
-    return
-  }
-
+async function handleFile(file: File) {
   try {
-    originalImage.value = await pixelOE.loadImage(files[0])
-    await nextTick()
-    drawOriginalImage()
+    originalImage.value = await pixelOE.loadImage(file)
     resultImage.value = null
+    await nextTick()
+    drawOriginal()
+    await processImage()
   }
   catch (error) {
     console.error('Error loading image:', error)
   }
 }
 
-async function handlePastedImage(file: File) {
-  try {
-    originalImage.value = await pixelOE.loadImage(file)
-    await nextTick()
-    drawOriginalImage()
-    resultImage.value = null
-  }
-  catch (error) {
-    console.error('Error loading pasted image:', error)
-  }
-}
-
-// Handle file input change
-function handleFileInputChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (input.files && input.files.length > 0) {
-    handlePastedImage(input.files[0])
-  }
-}
-
-// Drag and drop handlers
-function onDragOver(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-}
-
-function onDragLeave(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-}
-
-function onDrop(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-
-  const files = event.dataTransfer?.files
-  if (files && files.length > 0) {
-    const file = files[0]
-    if (file.type.startsWith('image/')) {
-      handlePastedImage(file)
-    }
-  }
-}
-
 function handleOptionsChange() {
+  activePresetId.value = null
   pixelOE.setOptions(options)
+}
+
+async function applyPreset(preset: PixelOEPreset) {
+  Object.assign(options, BASE_OPTIONS, preset.options)
+  pixelOE?.setOptions(options)
+  activePresetId.value = preset.id
+  if (originalImage.value) {
+    await processImage()
+  }
 }
 
 async function processImage() {
   if (!originalImage.value) {
     return
   }
-
   processing.value = true
-  const startTime = performance.now()
-
+  const t0 = performance.now()
   try {
-    await new Promise(resolve => setTimeout(resolve, 100))
-    const result = await processImageAsync(originalImage.value)
+    await new Promise(r => setTimeout(r, 50))
+    const result = await pixelOE.pixelizeAsync(originalImage.value)
     resultImage.value = result.result
-
-    const endTime = performance.now()
-    processingTime.value = endTime - startTime
-
+    processingTime.value = performance.now() - t0
     await nextTick()
-    drawResultImage()
+    drawResult()
   }
   catch (error) {
-    console.error('Error processing image:', error)
+    console.error('Error processing:', error)
   }
   finally {
     processing.value = false
   }
 }
 
-async function processImageAsync(imageData: PixelImageData): Promise<{ result: PixelImageData }> {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      try {
-        const result = pixelOE.pixelize(imageData)
-        resolve(result)
-      }
-      catch (error) {
-        reject(error)
-      }
-    }, 10)
-  })
-}
-
 async function downloadResult() {
   if (!resultImage.value) {
     return
   }
-
-  try {
-    const blob = await pixelOE.exportBlob(resultImage.value, 'image/png')
-    const url = URL.createObjectURL(blob)
-
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'pixeloe-result.png'
-    document.body.append(a)
-    a.click()
-    a.remove()
-
-    URL.revokeObjectURL(url)
-  }
-  catch (error) {
-    console.error('Error downloading image:', error)
-  }
+  const blob = await pixelOE.exportBlob(resultImage.value, 'image/png')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'pixeloe-result.png'
+  document.body.append(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
-function drawOriginalImage() {
-  if (!originalCanvas.value || !originalImage.value) {
+function drawOriginal() {
+  const ctx = originalCanvas.value?.getContext('2d')
+  if (!ctx || !originalImage.value) {
     return
   }
-
-  const ctx = originalCanvas.value.getContext('2d')
-  if (!ctx) {
-    return
-  }
-
-  const imageData = originalImage.value.toCanvasImageData()
-  ctx.clearRect(0, 0, originalCanvas.value.width, originalCanvas.value.height)
-  ctx.putImageData(imageData, 0, 0)
+  const img = originalImage.value.toCanvasImageData()
+  ctx.clearRect(0, 0, originalCanvas.value!.width, originalCanvas.value!.height)
+  ctx.putImageData(img, 0, 0)
 }
 
-function drawResultImage() {
-  if (!resultCanvas.value || !resultImage.value) {
+function drawResult() {
+  const ctx = resultCanvas.value?.getContext('2d')
+  if (!ctx || !resultImage.value) {
     return
   }
-
-  const ctx = resultCanvas.value.getContext('2d')
-  if (!ctx) {
-    return
-  }
-
-  const imageData = resultImage.value.toCanvasImageData()
-  ctx.clearRect(0, 0, resultCanvas.value.width, resultCanvas.value.height)
   ctx.imageSmoothingEnabled = false
-  ctx.putImageData(imageData, 0, 0)
+  const img = resultImage.value.toCanvasImageData()
+  ctx.clearRect(0, 0, resultCanvas.value!.width, resultCanvas.value!.height)
+  ctx.putImageData(img, 0, 0)
 }
 </script>
 
 <template>
-  <div class="bg-white flex flex-col h-screen">
-    <!-- Header -->
-    <div class="text-white p-4 bg-black flex-shrink-0">
-      <div class="mx-auto px-4 max-w-2xl">
-        <h1 class="text-xl font-bold">
-          PixelOE.js
-        </h1>
-        <p class="text-sm text-gray-300">
-          Pixel Art Generator
-        </p>
-      </div>
-    </div>
-
-    <div class="mx-auto px-4 flex flex-1 flex-col max-w-2xl w-full overflow-hidden">
-      <!-- Upload Area (only when image is loaded) -->
-      <div v-if="originalImage" class="py-4 flex-shrink-0">
-        <div class="relative">
-          <FileUpload
-            mode="basic"
-            accept="image/*"
-            :max-file-size="10000000"
-            auto
-            choose-label="Change Image"
-            class="w-full"
-            @upload="handleFileSelect"
-            @select="handleFileSelect"
-          />
+  <div class="demo">
+    <div class="demo__editor">
+      <!-- Main area: dropzone or canvas + actions -->
+      <div class="demo__main">
+        <div v-if="!originalImage" class="demo__upload">
+          <WfDropZone @file="handleFile" />
         </div>
-      </div>
-
-      <!-- Main Content Area -->
-      <div class="flex-1 overflow-hidden" :class="!originalImage ? 'py-4' : 'pb-4'">
-        <!-- Before Upload - Upload area takes full space -->
-        <div v-if="!originalImage" class="h-full">
-          <div class="h-full relative">
-            <input
-              type="file"
-              accept="image/*"
-              class="opacity-0 h-full w-full cursor-pointer inset-0 absolute z-10"
-              @change="handleFileInputChange"
-            >
-            <div
-              class="text-center border-2 border-gray-300 border-dashed bg-gray-50 flex h-full cursor-pointer transition-all items-center justify-center hover:border-gray-400 hover:bg-gray-100"
-              @dragover.prevent="onDragOver"
-              @dragleave.prevent="onDragLeave"
-              @drop.prevent="onDrop"
-            >
-              <div class="text-gray-600">
-                <div class="i-carbon-cloud-upload mx-auto mb-4 h-16 w-16" />
-                <p class="text-lg font-semibold mb-2">
-                  Upload Your Image
-                </p>
-                <p class="text-sm text-gray-500 mb-1">
-                  PNG, JPG, WEBP
-                </p>
-                <p class="text-xs text-gray-400">
-                  Or paste image from clipboard
-                </p>
-              </div>
+        <div v-else class="demo__canvas-wrap">
+          <div class="demo__canvas-header">
+            <span class="demo__label">
+              {{ showingOriginal ? 'orig' : resultImage ? 'result' : 'ready' }}
+            </span>
+            <span v-if="resultImage" class="demo__stats">
+              {{ processingTime.toFixed(0) }}ms
+            </span>
+          </div>
+          <div
+            class="demo__canvas-area"
+            :class="{ processing }"
+            @mousedown="showingOriginal = !!resultImage"
+            @mouseup="showingOriginal = false"
+            @mouseleave="showingOriginal = false"
+            @touchstart.prevent="showingOriginal = !!resultImage"
+            @touchend="showingOriginal = false"
+            @touchcancel="showingOriginal = false"
+          >
+            <canvas
+              ref="originalCanvas"
+              :width="originalImage.width"
+              :height="originalImage.height"
+              class="demo__canvas"
+              :class="{ hidden: !showingOriginal && !!resultImage }"
+            />
+            <canvas
+              v-if="resultImage"
+              ref="resultCanvas"
+              :width="resultImage.width"
+              :height="resultImage.height"
+              class="demo__canvas pixel-art"
+              :class="{ hidden: showingOriginal }"
+            />
+            <div v-if="processing" class="demo__processing">
+              <span class="demo__spinner" />
+              <span>processing...</span>
             </div>
+          </div>
+          <div class="demo__canvas-hint">
+            <span v-if="resultImage">hold to compare with original</span>
+            <span v-else>adjust settings → generate</span>
           </div>
         </div>
 
-        <!-- After Upload - Overlapped View -->
-        <div v-else class="flex flex-col h-full">
-          <!-- Image Container with Overlay -->
-          <div class="flex flex-1 flex-col min-h-0">
-            <div class="mb-3 text-center">
-              <h4 class="text-sm text-gray-700 font-medium">
-                {{ showingOriginal ? 'Original' : (resultImage ? 'Pixel Art' : 'Ready') }}
-              </h4>
-              <div class="mt-1 space-y-1">
-                <p class="text-xs text-gray-500">
-                  {{ resultImage ? 'Hold to view original comparison' : 'Click Generate to see effect' }}
-                </p>
-                <div v-if="resultImage && processingTime > 0" class="text-xs text-gray-400 flex gap-4 items-center justify-center">
-                  <span>⏱️ {{ processingTime.toFixed(0) }}ms</span>
-                  <span v-if="options.edgeExpansionMode === 'optimized'">
-                    ⚡ Optimized
-                  </span>
-                  <span v-if="lastEdgeCoverage > 0">
-                    🎯 {{ (lastEdgeCoverage * 100).toFixed(0) }}% edges
-                  </span>
-                </div>
-              </div>
-            </div>
+        <!-- Actions bar -->
+        <div v-if="originalImage" class="demo__actions">
+          <WfButton variant="primary" :loading="processing" @click="processImage">
+            generate
+          </WfButton>
+          <WfButton variant="secondary" @click="originalImage = null">
+            new
+          </WfButton>
+          <WfButton v-if="resultImage" variant="secondary" @click="downloadResult">
+            download
+          </WfButton>
+        </div>
+      </div>
 
-            <div class="border border-gray-200 bg-gray-50 flex flex-1 items-center justify-center relative overflow-hidden">
-              <!-- Original Canvas (always present when image loaded) -->
-              <canvas
-                ref="originalCanvas"
-                :width="originalImage?.width || 0"
-                :height="originalImage?.height || 0"
-                class="h-full w-full transition-opacity duration-200 object-contain"
-                :class="{ 'opacity-100': showingOriginal || !resultImage, 'opacity-0': !showingOriginal && resultImage }"
-              />
-
-              <!-- Result Canvas (overlapped) -->
-              <canvas
-                v-if="resultImage"
-                ref="resultCanvas"
-                :width="resultImage.width"
-                :height="resultImage.height"
-                class="pixel-art h-full w-full transition-opacity duration-200 inset-0 absolute object-contain"
-                :class="{ 'opacity-0': showingOriginal, 'opacity-100': !showingOriginal }"
-                @mousedown="showingOriginal = true"
-                @mouseup="showingOriginal = false"
-                @mouseleave="showingOriginal = false"
-                @touchstart="showingOriginal = true"
-                @touchend="showingOriginal = false"
-                @touchcancel="showingOriginal = false"
-              />
-
-              <!-- Processing State -->
-              <div v-if="processing" class="bg-white bg-opacity-90 flex items-center inset-0 justify-center absolute">
-                <div class="text-gray-600 text-center">
-                  <ProgressSpinner style="width: 32px; height: 32px" stroke-width="4" class="mb-2" />
-                  <p class="text-xs">
-                    Processing...
-                  </p>
-                  <p class="text-xs text-gray-400 mt-1">
-                    Using {{ options.edgeExpansionMode === 'legacy' ? 'Legacy' : 'Optimized' }} algorithm
-                  </p>
-                </div>
-              </div>
-            </div>
+      <!-- Settings sidebar -->
+      <aside class="demo__sidebar">
+        <div class="demo__sidebar-head">
+          <div class="demo__tabs">
+            <button
+              type="button"
+              class="demo__tab"
+              :class="{ active: sidebarTab === 'presets' }"
+              @click="sidebarTab = 'presets'"
+            >
+              presets
+            </button>
+            <button
+              type="button"
+              class="demo__tab"
+              :class="{ active: sidebarTab === 'settings' }"
+              @click="sidebarTab = 'settings'"
+            >
+              settings
+            </button>
           </div>
         </div>
-      </div>
-
-      <!-- Bottom Actions -->
-      <div v-if="originalImage" class="py-4 border-t border-gray-100 bg-white flex-shrink-0">
-        <div class="flex space-x-3">
-          <Button
-            :disabled="processing"
-            :loading="processing"
-            label="Generate"
-            class="flex-1"
-            @click="processImage"
-          />
-
-          <Button
-            @click="showSettings = true"
-          >
-            <div class="i-carbon-settings h-5 w-5" />
-          </Button>
-
-          <Button
-            v-if="resultImage"
-            @click="downloadResult"
-          >
-            <div class="i-carbon-download h-5 w-5" />
-          </Button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Settings Modal -->
-    <div v-if="showSettings" class="bg-white flex flex-col inset-0 fixed z-50">
-      <div class="flex flex-col h-full w-full" @click.stop>
-        <div class="p-6 border-b border-gray-200 flex flex-shrink-0 items-center justify-between">
-          <h3 class="text-lg text-gray-900 font-semibold">
-            Settings
-          </h3>
-          <Button
-            text
-            severity="secondary"
-            @click="showSettings = false"
-          >
-            <div class="i-carbon-close h-6 w-6" />
-          </Button>
-        </div>
-
-        <div class="p-6 flex-1 overflow-y-auto">
-          <div class="space-y-6">
+        <PresetGallery
+          v-if="sidebarTab === 'presets'"
+          class="demo__gallery"
+          :active-id="activePresetId"
+          @select="applyPreset"
+        />
+        <div v-else class="demo__sidebar-body">
+          <div class="settings">
             <!-- Sliders -->
-            <div class="space-y-4">
-              <!-- Pixel Size -->
-              <div>
-                <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Pixel Size</label>
-                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.pixelSize }}</span>
-                </div>
-                <Slider
-                  v-model="options.pixelSize"
-                  :min="2"
-                  :max="16"
-                  :step="1"
-                  class="w-full"
-                  @update:model-value="handleOptionsChange"
-                />
-              </div>
-
-              <!-- Target Size -->
-              <div>
-                <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Target Size</label>
-                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.targetSize }}</span>
-                </div>
-                <Slider
-                  v-model="options.targetSize"
-                  :min="64"
-                  :max="512"
-                  :step="16"
-                  class="w-full"
-                  @update:model-value="handleOptionsChange"
-                />
-              </div>
-
-              <!-- Thickness -->
-              <div>
-                <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Outline Thickness</label>
-                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.thickness }}</span>
-                </div>
-                <Slider
-                  v-model="options.thickness"
-                  :min="0"
-                  :max="10"
-                  :step="1"
-                  class="w-full"
-                  @update:model-value="handleOptionsChange"
-                />
-              </div>
-
-              <!-- Contrast -->
-              <div>
-                <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Contrast</label>
-                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.contrast.toFixed(1) }}</span>
-                </div>
-                <Slider
-                  v-model="options.contrast"
-                  :min="0.5"
-                  :max="2.0"
-                  :step="0.1"
-                  class="w-full"
-                  @update:model-value="handleOptionsChange"
-                />
-              </div>
-
-              <!-- Saturation -->
-              <div>
-                <div class="mb-2 flex items-center justify-between">
-                  <label class="text-sm text-gray-700 font-medium">Saturation</label>
-                  <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ options.saturation.toFixed(1) }}</span>
-                </div>
-                <Slider
-                  v-model="options.saturation"
-                  :min="0.5"
-                  :max="2.0"
-                  :step="0.1"
-                  class="w-full"
-                  @update:model-value="handleOptionsChange"
-                />
-              </div>
-            </div>
-
-            <!-- Algorithm Performance Section -->
-            <div class="pt-4 border-t border-gray-200">
-              <h4 class="text-sm text-gray-700 font-semibold mb-4">
-                Algorithm Performance
-              </h4>
-              <div class="space-y-4">
-                <!-- Processing Mode -->
-                <div>
-                  <div class="mb-2 flex items-center justify-between">
-                    <label class="text-sm text-gray-700 font-medium">Processing Mode</label>
-                  </div>
-                  <Dropdown
-                    v-model="options.mode"
-                    :options="processingModes"
-                    option-label="label"
-                    option-value="value"
-                    placeholder="Select processing mode"
-                    class="w-full"
+            <section class="settings__section">
+              <div class="settings__grid">
+                <div class="settings__item">
+                  <WfSlider
+                    v-model="options.pixelSize"
+                    :min="2"
+                    :max="16"
+                    :step="1"
+                    label="Pixel Size"
                     @update:model-value="handleOptionsChange"
                   />
+                  <span class="settings__val">{{ options.pixelSize }}</span>
                 </div>
-
-                <!-- Edge Expansion Algorithm -->
-                <div>
-                  <div class="mb-2 flex items-center justify-between">
-                    <label class="text-sm text-gray-700 font-medium">Edge Expansion Algorithm</label>
-                  </div>
-                  <Dropdown
-                    v-model="options.edgeExpansionMode"
-                    :options="edgeExpansionModes"
-                    option-label="label"
-                    option-value="value"
-                    placeholder="Select edge expansion algorithm"
-                    class="w-full"
+                <div class="settings__item">
+                  <WfSlider
+                    :model-value="options.targetSize ?? 256"
+                    :min="64"
+                    :max="512"
+                    :step="16"
+                    label="Target Size"
+                    @update:model-value="options.targetSize = $event; handleOptionsChange()"
+                  />
+                  <span class="settings__val">{{ options.targetSize }}</span>
+                </div>
+                <div class="settings__item">
+                  <WfSlider
+                    v-model="options.thickness"
+                    :min="0"
+                    :max="10"
+                    :step="1"
+                    label="Outline"
                     @update:model-value="handleOptionsChange"
-                  >
-                    <template #option="slotProps">
-                      <div class="py-2">
-                        <div class="font-medium">
-                          {{ slotProps.option.label }}
-                        </div>
-                        <div class="text-xs text-gray-500 mt-1">
-                          {{ slotProps.option.description }}
-                        </div>
-                      </div>
-                    </template>
-                  </Dropdown>
-                  <p class="text-xs text-gray-500 mt-2">
-                    <span v-if="options.edgeExpansionMode === 'legacy'">
-                      🐌 Original algorithm with full quality but slower processing
-                    </span>
-                    <span v-else-if="options.edgeExpansionMode === 'optimized'">
-                      ⚡ Best balance of speed and quality with edge-aware optimization
-                    </span>
-                  </p>
+                  />
+                  <span class="settings__val">{{ options.thickness }}</span>
                 </div>
-
-                <!-- Advanced Options for Optimized Mode -->
-                <div v-if="options.edgeExpansionMode === 'optimized'" class="space-y-3">
-                  <!-- Edge Detection Threshold -->
-                  <div>
-                    <div class="mb-2 flex items-center justify-between">
-                      <label class="text-sm text-gray-700 font-medium">Edge Sensitivity</label>
-                      <span class="text-sm text-gray-600 font-medium px-2 py-1 bg-gray-100">{{ ((options.edgeDetectionThreshold || 0.1) * 100).toFixed(0) }}%</span>
-                    </div>
-                    <Slider
-                      v-model="options.edgeDetectionThreshold"
-                      :min="0.01"
-                      :max="0.3"
-                      :step="0.01"
-                      class="w-full"
-                      @update:model-value="handleOptionsChange"
-                    />
-                    <p class="text-xs text-gray-500 mt-1">
-                      Lower values detect more edges (slower), higher values detect fewer edges (faster)
-                    </p>
-                  </div>
+                <div class="settings__item">
+                  <WfSlider
+                    v-model="options.contrast"
+                    :min="0.5"
+                    :max="2"
+                    :step="0.1"
+                    label="Contrast"
+                    @update:model-value="handleOptionsChange"
+                  />
+                  <span class="settings__val">{{ options.contrast.toFixed(1) }}</span>
+                </div>
+                <div class="settings__item">
+                  <WfSlider
+                    v-model="options.saturation"
+                    :min="0.5"
+                    :max="2"
+                    :step="0.1"
+                    label="Saturation"
+                    @update:model-value="handleOptionsChange"
+                  />
+                  <span class="settings__val">{{ options.saturation.toFixed(1) }}</span>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <!-- Palette Section -->
-            <div class="pt-4 border-t border-gray-200">
-              <h4 class="text-sm text-gray-700 font-semibold mb-4">
-                Color Palette
+            <!-- Algorithm -->
+            <section class="settings__section">
+              <h4 class="settings__heading">
+                algorithm
+              </h4>
+              <div class="settings__row">
+                <span class="settings__row-label">Mode</span>
+                <WfSelect
+                  v-model="options.mode"
+                  :options="processingModes"
+                  @update:model-value="handleOptionsChange"
+                />
+              </div>
+              <div class="settings__row">
+                <span class="settings__row-label">Edge Expansion</span>
+                <WfSelect
+                  v-model="options.edgeExpansionMode"
+                  :options="edgeExpansionModes"
+                  @update:model-value="handleOptionsChange"
+                />
+              </div>
+            </section>
+
+            <!-- Palette -->
+            <section class="settings__section">
+              <h4 class="settings__heading">
+                palette
               </h4>
               <PaletteSelector
                 v-model:use-palette="options.usePalette"
@@ -608,73 +339,336 @@ function drawResultImage() {
                 @update:selected-palette="handleOptionsChange"
                 @update:dither-method="handleOptionsChange"
               />
-            </div>
+            </section>
 
-            <!-- Toggle Options -->
-            <div class="pt-4 border-t border-gray-200 space-y-4">
-              <!-- Color Matching -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <label class="text-sm text-gray-700 font-medium block">Color Matching</label>
-                  <p class="text-xs text-gray-500 mt-1">
-                    Optimize color palette selection
-                  </p>
-                </div>
-                <InputSwitch
+            <!-- Toggles -->
+            <section class="settings__section">
+              <h4 class="settings__heading">
+                options
+              </h4>
+              <div class="settings__toggles">
+                <WfSwitch
                   v-model="options.colorMatching"
+                  label="Color Matching"
                   @update:model-value="handleOptionsChange"
                 />
-              </div>
-
-              <!-- No Upscale -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <label class="text-sm text-gray-700 font-medium block">Disable Upscale</label>
-                  <p class="text-xs text-gray-500 mt-1">
-                    Prevent image upscaling
-                  </p>
-                </div>
-                <InputSwitch
+                <WfSwitch
                   v-model="options.noUpscale"
+                  label="Disable Upscale"
                   @update:model-value="handleOptionsChange"
                 />
-              </div>
-
-              <!-- No Downscale -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <label class="text-sm text-gray-700 font-medium block">Disable Downscale</label>
-                  <p class="text-xs text-gray-500 mt-1">
-                    Prevent image downscaling
-                  </p>
-                </div>
-                <InputSwitch
+                <WfSwitch
                   v-model="options.noDownscale"
+                  label="Disable Downscale"
                   @update:model-value="handleOptionsChange"
                 />
               </div>
-            </div>
+            </section>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pixel-art {
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-  image-rendering: crisp-edges;
+.demo {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.bg-checkered {
+/* Upload */
+.demo__upload {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Editor layout */
+.demo__editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Main (canvas + actions) */
+.demo__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px 24px 24px;
+  gap: 16px;
+  overflow: hidden;
+}
+
+/* Canvas */
+.demo__canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.demo__canvas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.demo__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.demo__stats {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.demo__canvas-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   background-image:
-    linear-gradient(45deg, #f8f9fa 25%, transparent 25%),
-    linear-gradient(-45deg, #f8f9fa 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #f8f9fa 75%),
-    linear-gradient(-45deg, transparent 75%, #f8f9fa 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    linear-gradient(45deg, var(--color-checker) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-checker) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-checker) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-checker) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.demo__canvas-area.processing {
+  opacity: 0.6;
+}
+
+.demo__canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: opacity 0.15s;
+}
+.demo__canvas.hidden {
+  opacity: 0;
+  position: absolute;
+}
+
+.demo__processing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  background: var(--color-overlay);
+  backdrop-filter: blur(2px);
+}
+
+.demo__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.demo__canvas-hint {
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Actions */
+.demo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Sidebar */
+.demo__sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.demo__sidebar-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.demo__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+}
+
+.demo__tab {
+  flex: 1;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.demo__tab:hover {
+  color: var(--color-text);
+}
+
+.demo__tab.active {
+  background: var(--color-surface-raised);
+  color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.demo__gallery {
+  flex: 1;
+  min-height: 0;
+}
+
+.demo__sidebar-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Settings */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings__heading {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings__item > :first-child {
+  flex: 1;
+}
+
+.settings__val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
+.settings__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings__row-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Mobile: stack settings below canvas */
+@media (max-width: 767px) {
+  .demo__editor {
+    flex-direction: column;
+  }
+
+  .demo__main {
+    padding: 16px;
+    flex: none;
+    height: 55%;
+    min-height: 320px;
+  }
+
+  .demo__sidebar {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    flex: 1;
+    min-height: 0;
+  }
+
+  .demo__sidebar-body {
+    padding: 16px;
+  }
 }
 </style>

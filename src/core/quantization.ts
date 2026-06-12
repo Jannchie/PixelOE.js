@@ -43,8 +43,12 @@ export function generateCentroids(
     const offset = i * numChannels
     for (let c = 0; c < numChannels; c++) {
       const val = pixels[offset + c]
-      if (val < minValues[c]) minValues[c] = val
-      if (val > maxValues[c]) maxValues[c] = val
+      if (val < minValues[c]) {
+        minValues[c] = val
+      }
+      if (val > maxValues[c]) {
+        maxValues[c] = val
+      }
     }
   }
 
@@ -199,9 +203,8 @@ function findNearestCentroidFlat(
   let nearestIndex = 0
   const offset = pixelIndex * numChannels
 
-  for (let i = 0; i < centroids.length; i++) {
+  for (const [i, centroid] of centroids.entries()) {
     let distance = 0
-    const centroid = centroids[i]
     for (let c = 0; c < numChannels; c++) {
       const diff = pixels[offset + c] - centroid[c]
       distance += diff * diff
@@ -324,12 +327,7 @@ export function colorQuantizationKMeans(
   for (let i = 0; i < pixelCount; i++) {
     const y = Math.floor(i / imageData.width)
     const x = i % imageData.width
-    const [
-      ,
-      ,
-      ,
-      a,
-    ] = imageData.getPixel(x, y)
+    const a = imageData.getPixel(x, y)[3]
     const nearestIndex = findNearestCentroidFlat(pixels, i, numChannels, centroids)
     const nearestColor = centroids[nearestIndex]
     quantized.setPixel(x, y, [Math.round(nearestColor[0]), Math.round(nearestColor[1]), Math.round(nearestColor[2]), a])
