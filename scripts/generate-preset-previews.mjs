@@ -22,10 +22,18 @@ import { chromium } from 'playwright-core'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+// Source images for preset previews, cycled across presets (sample[i % N]).
+// The first 6 line up with the non-palette presets so each shows a distinct
+// scene; palette presets reuse them. Local dataset — pass images as CLI args
+// to override.
+const DATASET = '/mnt/e/aigc/datasets/gpt-image-2'
 const DEFAULT_SAMPLES = [
-  '../__fern_sousou_no_frieren_generated_by_drowsy_sheep__sample-0f7f4f06a2bac538bc731e8362c79fd2.jpg',
-  '../__frieren_sousou_no_frieren_drawn_by_xuhh__fbb7597e7003f9e2a81a25f4593cc893.png',
-  '../demo/house-python-test.webp',
+  `${DATASET}/futuristic-megacity-aerial-panorama.png`, // default: wide, dense detail
+  `${DATASET}/isekai-crystal-cavern-sanctuary-portrait.png`, // fine: tall, saturated detail
+  `${DATASET}/square-snowy-shrine-siblings.png`, // chunky: square, bold shapes
+  `${DATASET}/japanese-cinematic-rainy-tokyo-street.png`, // outline: edges, neon vs dark
+  `${DATASET}/japanese-cinematic-red-umbrella-closeup.png`, // vivid: strong red/green
+  `${DATASET}/summer-rice-fields.png`, // soft: gentle pastoral
 ]
 
 const sampleArgs = process.argv.slice(2)
