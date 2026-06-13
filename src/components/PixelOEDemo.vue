@@ -504,8 +504,8 @@ function drawResult() {
 }
 
 .demo__canvas {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   transition: opacity 0.15s;
 }
