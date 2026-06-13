@@ -2,7 +2,8 @@
 import type { PixelOEPreset } from '../core/presets'
 import type { PixelImageData, PixelOEOptions } from '../index'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { BASE_OPTIONS } from '../core/presets'
+import { getPresetPreview } from '../core/presetPreviews'
+import { BASE_OPTIONS, PRESETS } from '../core/presets'
 import { PixelOE } from '../index'
 import PaletteSelector from './PaletteSelector.vue'
 import PresetGallery from './PresetGallery.vue'
@@ -18,6 +19,9 @@ const resultCanvas = ref<HTMLCanvasElement>()
 const originalImage = ref<PixelImageData | null>(null)
 const resultImage = ref<PixelImageData | null>(null)
 const processing = ref(false)
+// True while the canvas shows a preset's own sample image rather than one the
+// user supplied. Switching presets re-loads samples; a user image is kept.
+const imageIsExample = ref(false)
 
 const showingOriginal = ref(false)
 const processingTime = ref(0)
@@ -51,6 +55,8 @@ onMounted(() => {
     }
   }
   document.addEventListener('paste', pasteHandler)
+  // First load: show the default preset applied to its own sample image.
+  void applyPreset(PRESETS.find(p => p.id === 'default') ?? PRESETS[0])
 })
 
 onUnmounted(() => {
@@ -62,6 +68,7 @@ onUnmounted(() => {
 async function handleFile(file: File) {
   try {
     originalImage.value = await pixelOE.loadImage(file)
+    imageIsExample.value = false
     resultImage.value = null
     await nextTick()
     drawOriginal()
@@ -70,6 +77,37 @@ async function handleFile(file: File) {
   catch (error) {
     console.error('Error loading image:', error)
   }
+}
+
+function onCanvasDrop(event: DragEvent) {
+  const file = event.dataTransfer?.files?.[0]
+  if (file?.type.startsWith('image/')) {
+    handleFile(file)
+  }
+}
+
+/** Replace the canvas with a preset's downscaled source image. */
+async function loadPresetSample(presetId: string) {
+  const preview = getPresetPreview(presetId)
+  if (!preview?.source) {
+    return
+  }
+  try {
+    originalImage.value = await pixelOE.loadImage(`${import.meta.env.BASE_URL}samples/${preview.source}`)
+    imageIsExample.value = true
+    resultImage.value = null
+    await nextTick()
+    drawOriginal()
+  }
+  catch (error) {
+    console.error('Error loading preset sample:', error)
+  }
+}
+
+function clearImage() {
+  originalImage.value = null
+  resultImage.value = null
+  imageIsExample.value = false
 }
 
 function handleOptionsChange() {
@@ -81,6 +119,11 @@ async function applyPreset(preset: PixelOEPreset) {
   Object.assign(options, BASE_OPTIONS, preset.options)
   pixelOE?.setOptions(options)
   activePresetId.value = preset.id
+  // With no user image (or while showing a sample), switch to this preset's
+  // own sample image; a user-supplied image is kept and just re-processed.
+  if (!originalImage.value || imageIsExample.value) {
+    await loadPresetSample(preset.id)
+  }
   if (originalImage.value) {
     await processImage()
   }
@@ -153,7 +196,7 @@ function drawResult() {
         <div v-if="!originalImage" class="demo__upload">
           <WfDropZone @file="handleFile" />
         </div>
-        <div v-else class="demo__canvas-wrap">
+        <div v-else class="demo__canvas-wrap" @dragover.prevent @drop.prevent="onCanvasDrop">
           <div class="demo__canvas-header">
             <span class="demo__label">
               {{ showingOriginal ? 'orig' : resultImage ? 'result' : 'ready' }}
@@ -193,7 +236,7 @@ function drawResult() {
             </div>
           </div>
           <div class="demo__canvas-hint">
-            <span v-if="resultImage">hold to compare with original</span>
+            <span v-if="resultImage">hold to compare with original{{ imageIsExample ? ' · drop your own to replace' : '' }}</span>
             <span v-else>adjust settings → generate</span>
           </div>
         </div>
@@ -203,7 +246,7 @@ function drawResult() {
           <WfButton variant="primary" :loading="processing" @click="processImage">
             generate
           </WfButton>
-          <WfButton variant="secondary" @click="originalImage = null">
+          <WfButton variant="secondary" @click="clearImage">
             new
           </WfButton>
           <WfButton v-if="resultImage" variant="secondary" @click="downloadResult">

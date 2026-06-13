@@ -3,8 +3,10 @@
  *
  * For each preset in src/core/presets.ts, runs PixelOE in a headless
  * Chromium against a sample image and writes:
- *   - public/presets/<id>.png
- *   - src/core/presetPreviews.ts (manifest with image dimensions)
+ *   - public/presets/<id>.png        (the pixelized preview thumbnail)
+ *   - public/samples/<source>.webp   (downscaled source so the app can
+ *                                      re-apply the preset live on it)
+ *   - src/core/presetPreviews.ts     (manifest: dimensions + source file)
  *
  * Usage: pnpm gen:previews [sample images...]
  * Requires a Chromium binary (ms-playwright cache or system google-chrome).
@@ -117,12 +119,53 @@ try {
   })
 
   const sampleDataUrls = await Promise.all(samplePaths.map(p => toDataUrl(p)))
+
+  // Export each (deduplicated) source image, downscaled to the same cap used
+  // for preview generation, so the web app can load the exact picture behind
+  // a preset and re-apply it live. Index-aligned with samplePaths.
+  const MAXDIM = 768
+  const samplesDir = path.join(projectRoot, 'public/samples')
+  await mkdir(samplesDir, { recursive: true })
+  const sampleSources = []
+  const writtenSources = new Set()
+  for (const [k, p] of samplePaths.entries()) {
+    const outName = `${path.basename(p).replace(/\.[^.]+$/, '').replaceAll(/[^\w-]/g, '_')}.webp`
+    sampleSources[k] = outName
+    if (writtenSources.has(outName)) {
+      continue
+    }
+    const scaled = await page.evaluate(async ({ dataUrl, maxDim }) => {
+      const img = new Image()
+      await new Promise((res, rej) => {
+        img.addEventListener('load', res)
+        img.addEventListener('error', rej)
+        img.src = dataUrl
+      })
+      let w = img.naturalWidth
+      let h = img.naturalHeight
+      if (Math.max(w, h) > maxDim) {
+        const s = maxDim / Math.max(w, h)
+        w = Math.round(w * s)
+        h = Math.round(h * s)
+      }
+      const c = document.createElement('canvas')
+      c.width = w
+      c.height = h
+      c.getContext('2d').drawImage(img, 0, 0, w, h)
+      return c.toDataURL('image/webp', 0.92)
+    }, { dataUrl: sampleDataUrls[k], maxDim: MAXDIM })
+    await writeFile(path.join(samplesDir, outName), Buffer.from(scaled.split(',')[1], 'base64'))
+    writtenSources.add(outName)
+    console.log(`source → public/samples/${outName}`)
+  }
+
   const outDir = path.join(projectRoot, 'public/presets')
   await mkdir(outDir, { recursive: true })
 
   const manifest = []
   for (const [i, id] of presetIds.entries()) {
     const sample = sampleDataUrls[i % sampleDataUrls.length]
+    const source = sampleSources[i % sampleSources.length]
     process.stdout.write(`[${i + 1}/${presetIds.length}] ${id} ... `)
     try {
       const result = await page.evaluate(async ({ presetId, dataUrl }) => {
@@ -162,7 +205,7 @@ try {
         path.join(outDir, file),
         Buffer.from(result.dataUrl.split(',')[1], 'base64'),
       )
-      manifest.push({ id, file, width: result.width, height: result.height })
+      manifest.push({ id, file, width: result.width, height: result.height, source })
       console.log(`ok (${result.width}x${result.height})`)
     }
     catch (error) {
@@ -170,11 +213,16 @@ try {
     }
   }
 
-  // Remove stale previews for presets that no longer exist
+  // Flag stale previews / sources that no longer correspond to a preset
   const wanted = new Set(manifest.map(m => m.file))
   for (const f of await readdir(outDir)) {
     if (!wanted.has(f)) {
       console.log(`stale preview (delete manually if unwanted): public/presets/${f}`)
+    }
+  }
+  for (const f of await readdir(samplesDir)) {
+    if (!writtenSources.has(f)) {
+      console.log(`stale sample (delete manually if unwanted): public/samples/${f}`)
     }
   }
 
@@ -188,10 +236,12 @@ export interface PresetPreview {
   file: string
   width: number
   height: number
+  /** Downscaled source image in /public/samples used to generate this preview. */
+  source: string
 }
 
 export const PRESET_PREVIEWS: PresetPreview[] = [
-${manifest.map(m => `  { id: '${m.id}', file: '${m.file}', width: ${m.width}, height: ${m.height} },`).join('\n')}
+${manifest.map(m => `  { id: '${m.id}', file: '${m.file}', width: ${m.width}, height: ${m.height}, source: '${m.source}' },`).join('\n')}
 ]
 
 export function getPresetPreview(id: string): PresetPreview | undefined {
