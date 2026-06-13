@@ -60,6 +60,8 @@ interface PatchFeatures {
   robustMinL: Float32Array // mean of the darkest ~12% — rendering value (absolute min is one noisy pixel)
   robustMaxL: Float32Array
   iqr: Float32Array // scaled q40-q60 spread of L — local activity, blind to thin (<40% coverage) structures
+  actDark: Float32Array // scaled (medL - q40) — downward activity inside the inner band
+  actBright: Float32Array // scaled (q60 - medL) — upward activity inside the inner band
   // Patch grid geometry (source-pixel bounds per output cell)
   xStarts: Int32Array
   yStarts: Int32Array
