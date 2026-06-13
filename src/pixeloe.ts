@@ -4,6 +4,8 @@ import type { SharpenMode } from './core/sharpen'
 import { colorStyling } from './core/color'
 import { matchColorFast } from './core/colorOptimizedFast'
 import { contrastDownscale } from './core/downscale'
+import { contourDownscale } from './core/contourPixelize'
+import { contrastDownscaleMRF } from './core/downscaleMRF'
 import { PixelImageData } from './core/imageData'
 import { resizeImageSync } from './core/imageResize'
 import { outlineExpansion, outlineExpansionOptimized, outlineExpansionOptimizedAsync } from './core/outline'
@@ -19,6 +21,8 @@ export interface PixelOEOptions {
   thickness: number // thickness in Python demo
   targetSize?: number // target_size in Python demo (new parameter)
   mode: 'contrast'
+  downscaleMethod?: 'contrast' | 'mrf' | 'mrf-rescue' | 'contour' // greedy heuristic / MRF labeling / greedy+MRF rescue / contour re-rasterization (experimental)
+  mrfAA?: boolean // MRF only: blend low-coverage structure patches toward center (pixel-art AA convention)
   colorMatching: boolean
   contrast: number
   saturation: number
@@ -67,6 +71,7 @@ export class PixelOE {
       thickness: 3, // thickness
       targetSize: 128, // target_size
       mode: 'contrast',
+      downscaleMethod: 'contrast',
       colorMatching: true,
       contrast: 1,
       saturation: 1,
@@ -429,8 +434,16 @@ export class PixelOE {
       const targetSize = this.options.targetSize
         || Math.floor(Math.sqrt(originalImageData.width * originalImageData.height) / this.options.pixelSize)
 
-      console.log(`🔽 [PixelOE] Starting contrast downscaling (target: ${targetSize})`)
-      result = contrastDownscale(result, targetSize)
+      console.log(`🔽 [PixelOE] Starting ${this.options.downscaleMethod ?? 'contrast'} downscaling (target: ${targetSize})`)
+      if (this.options.downscaleMethod === 'mrf' || this.options.downscaleMethod === 'mrf-rescue') {
+        result = contrastDownscaleMRF(result, targetSize, { aa: this.options.mrfAA, rescue: this.options.downscaleMethod === 'mrf-rescue' })
+      }
+      else if (this.options.downscaleMethod === 'contour') {
+        result = contourDownscale(result, targetSize)
+      }
+      else {
+        result = contrastDownscale(result, targetSize)
+      }
     }
     const downscaleTime = performance.now() - downscaleStart
     console.log(`🔽 [PixelOE] Downscaling completed: ${downscaleTime.toFixed(1)}ms`)
